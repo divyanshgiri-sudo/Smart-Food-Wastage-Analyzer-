@@ -7,7 +7,30 @@
  */
 
 // Vite proxies /api to the Express server in development (see vite.config.js).
-const BASE_URL = import.meta.env.VITE_API_URL || '';
+function normalizeBaseUrl(raw) {
+  if (!raw || typeof raw !== 'string') return '';
+  let trimmed = raw.trim().replace(/\/+$/, '');
+  if (!trimmed) return '';
+
+  // If already root-relative (starts with '/'), leave as-is for dev proxy
+  if (trimmed.startsWith('/')) {
+    return trimmed;
+  }
+
+  // Prepend https:// if protocol is missing (prevents browser treating domain as relative path)
+  if (!/^https?:\/\//i.test(trimmed)) {
+    trimmed = `https://${trimmed}`;
+  }
+
+  // Strip trailing /api if user included it in the environment variable
+  if (trimmed.endsWith('/api')) {
+    trimmed = trimmed.slice(0, -4);
+  }
+
+  return trimmed;
+}
+
+const BASE_URL = normalizeBaseUrl(import.meta.env.VITE_API_URL);
 const TOKEN_KEY = 'sfwa.token';
 const USER_KEY = 'sfwa.user';
 
@@ -60,7 +83,8 @@ async function request(path, { method = 'GET', body, auth = true } = {}) {
 
   let response;
   try {
-    response = await fetch(`${BASE_URL}/api${path}`, {
+    const cleanPath = path.startsWith('/') ? path : `/${path}`;
+    response = await fetch(`${BASE_URL}/api${cleanPath}`, {
       method,
       headers,
       body: body !== undefined ? JSON.stringify(body) : undefined,
