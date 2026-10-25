@@ -49,10 +49,10 @@ router.post('/auth/register-request', async (req, res) => {
   }
 
   const normalizedEmail = email.trim().toLowerCase();
-  if (!normalizedEmail.endsWith('@vitapstudent.ac.in')) {
+  if (!normalizedEmail.endsWith('@vitapstudent.ac.in') && !normalizedEmail.endsWith('@vitap.ac.in')) {
     return res.status(400).json({
-      error: 'Invalid domain. Students must use a @vitapstudent.ac.in email address.',
-      message: 'Invalid domain. Students must use a @vitapstudent.ac.in email address.',
+      error: 'Invalid domain. Allowed emails must end with @vitapstudent.ac.in or @vitap.ac.in.',
+      message: 'Invalid domain. Allowed emails must end with @vitapstudent.ac.in or @vitap.ac.in.',
     });
   }
 
@@ -62,7 +62,7 @@ router.post('/auth/register-request', async (req, res) => {
     return res.status(400).json({ error: 'An account with this email already exists. Please sign in.' });
   }
 
-  const cleanRole = role === 'admin' ? 'admin' : (role === 'student' ? 'student' : (normalizedEmail.endsWith('@vitap.ac.in') ? 'admin' : 'student'));
+  const cleanRole = 'student';
   const effectiveStudentId = studentId || regNo;
 
   const studentIdRegex = /^\d{2}[A-Za-z]{3}\d{4,5}$/;
@@ -179,7 +179,7 @@ router.post('/auth/register-verify', (req, res) => {
  * Body: { email: string }
  * Strictly checks that email ends with @vitap.ac.in or @vitapstudent.ac.in.
  * Checks if account exists in database. If not, returns 404 {"error": "Account not found. Please sign up first."}.
- * Generates OTP and sends strictly via nodemailer email (NEVER returned in JSON).
+ * Generates OTP and sends strictly via Gmail HTTP API (NEVER returned in JSON).
  */
 router.post('/auth/request-otp', async (req, res) => {
   const { email } = req.body || {};
@@ -188,10 +188,10 @@ router.post('/auth/request-otp', async (req, res) => {
   }
 
   const normalizedEmail = email.trim().toLowerCase();
-  if (!normalizedEmail.endsWith('@vitapstudent.ac.in')) {
+  if (!normalizedEmail.endsWith('@vitapstudent.ac.in') && !normalizedEmail.endsWith('@vitap.ac.in')) {
     return res.status(400).json({
-      error: 'Invalid domain. Students must use a @vitapstudent.ac.in email address.',
-      message: 'Invalid domain. Students must use a @vitapstudent.ac.in email address.',
+      error: 'Invalid domain. Allowed emails must end with @vitapstudent.ac.in or @vitap.ac.in.',
+      message: 'Invalid domain. Allowed emails must end with @vitapstudent.ac.in or @vitap.ac.in.',
     });
   }
 

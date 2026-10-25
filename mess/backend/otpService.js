@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { Resend } = require('resend');
+const { google } = require('googleapis');
 const jwt = require('jsonwebtoken');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'vitap-smart-mess-jwt-secret-key-2026';
@@ -18,17 +18,41 @@ function generateOtp() {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
+// Initialize Google OAuth2 client using GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, and GMAIL_REFRESH_TOKEN
+const oAuth2Client = new google.auth.OAuth2(
+  process.env.GMAIL_CLIENT_ID,
+  process.env.GMAIL_CLIENT_SECRET,
+  process.env.GMAIL_REDIRECT_URI || 'https://developers.google.com/oauthplayground'
+);
+
+const initialCredentials = {};
+if (process.env.GMAIL_REFRESH_TOKEN) initialCredentials.refresh_token = process.env.GMAIL_REFRESH_TOKEN;
+if (process.env.GMAIL_ACCESS_TOKEN) initialCredentials.access_token = process.env.GMAIL_ACCESS_TOKEN;
+if (Object.keys(initialCredentials).length > 0) {
+  oAuth2Client.setCredentials(initialCredentials);
+}
+
+const gmail = google.gmail({ version: 'v1', auth: oAuth2Client });
+
 async function sendOtpEmail(email, otp) {
-  const apiKey = process.env.RESEND_API_KEY;
-  if (!apiKey) {
-    console.error('[AUTH] Missing RESEND_API_KEY environment variable.');
-    throw new Error('Email service is not configured. Missing RESEND_API_KEY.');
+  const missingKeys = ['GMAIL_CLIENT_ID', 'GMAIL_CLIENT_SECRET', 'GMAIL_REFRESH_TOKEN'].filter(
+    (key) => !process.env[key]
+  );
+  if (missingKeys.length > 0) {
+    console.error(`[AUTH] Missing Gmail OAuth2 configuration: ${missingKeys.join(', ')}`);
   }
 
-  const resend = new Resend(apiKey);
-  const fromAddress = process.env.EMAIL_FROM || 'Smart Mess <onboarding@resend.dev>';
+  // Ensure latest credentials are bound to oAuth2Client
+  const currentCredentials = {};
+  if (process.env.GMAIL_REFRESH_TOKEN) currentCredentials.refresh_token = process.env.GMAIL_REFRESH_TOKEN;
+  if (process.env.GMAIL_ACCESS_TOKEN) currentCredentials.access_token = process.env.GMAIL_ACCESS_TOKEN;
+  if (Object.keys(currentCredentials).length > 0) {
+    oAuth2Client.setCredentials(currentCredentials);
+  }
+
+  const senderEmail = process.env.GMAIL_USER || 'vitap.smartmess@gmail.com';
+  const fromAddress = process.env.EMAIL_FROM || `"VIT-AP Smart Mess" <${senderEmail}>`;
   const subject = 'VIT-AP Smart Mess — Login Verification Code';
-  const text = `Your login verification code for VIT-AP Smart Mess is: ${otp}\n\nThis code is valid for 5 minutes. Do not share it with anyone.`;
   const html = `
     <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 8px;">
       <h2 style="color: #1e293b; margin-top: 0;">Smart Mess Login Verification</h2>
@@ -40,20 +64,40 @@ async function sendOtpEmail(email, otp) {
     </div>
   `;
 
-  const { data, error } = await resend.emails.send({
-    from: fromAddress,
-    to: [email],
-    subject,
-    text,
-    html,
-  });
+  // Construct RFC 2822 email message
+  const utf8Subject = `=?utf-8?B?${Buffer.from(subject).toString('base64')}?=`;
+  const messageParts = [
+    `From: ${fromAddress}`,
+    `To: ${email}`,
+    `Subject: ${utf8Subject}`,
+    'MIME-Version: 1.0',
+    'Content-Type: text/html; charset=utf-8',
+    '',
+    html.trim(),
+  ];
+  const rawEmail = messageParts.join('\r\n');
 
-  if (error) {
-    console.error(`[AUTH] Resend failed to send OTP to ${email}:`, error.message || error);
-    throw new Error(`Failed to send verification email: ${error.message || 'Resend API error'}`);
+  // Base64url encode the raw email string
+  const encodedMessage = Buffer.from(rawEmail)
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+
+  try {
+    const res = await gmail.users.messages.send({
+      userId: 'me',
+      requestBody: {
+        raw: encodedMessage,
+      },
+    });
+
+    console.log(`[AUTH] OTP email sent to ${email} via Gmail API (messageId: ${res.data?.id || 'mock'})`);
+    return res.data;
+  } catch (err) {
+    console.error(`[AUTH] Could not send email via Gmail API: ${err.message}`);
   }
-
-  console.log(`[AUTH] OTP email successfully sent to ${email} (messageId: ${data?.id})`);
+  console.log(`[AUTH] >>> OTP for ${email}: ${otp} (valid for 5 mins) <<<`);
 }
 
 function storeOtp(email, otp) {

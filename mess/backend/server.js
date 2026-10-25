@@ -1,4 +1,14 @@
 require('dotenv').config();
+
+const missingGmailOAuthVars = ['GMAIL_CLIENT_ID', 'GMAIL_CLIENT_SECRET', 'GMAIL_REFRESH_TOKEN'].filter(
+  (key) => !process.env[key]
+);
+if (missingGmailOAuthVars.length > 0) {
+  console.warn(
+    `[WARNING] Missing Google OAuth environment variable(s): ${missingGmailOAuthVars.join(', ')}. ` +
+      'Gmail HTTP API OTP delivery over port 443 will not function until these are configured.'
+  );
+}
 const http = require('http');
 const express = require('express');
 const cors = require('cors');
@@ -88,6 +98,12 @@ app.use('/api', apiRoutes);
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`Mess Admin Backend + Socket.io running on port ${PORT} (0.0.0.0:${PORT})`);
   console.log(`  database: ${dbPath}`);
+  const missingGmailVars = ['GMAIL_CLIENT_ID', 'GMAIL_CLIENT_SECRET', 'GMAIL_REFRESH_TOKEN'].filter(
+    (key) => !process.env[key]
+  );
+  if (missingGmailVars.length > 0) {
+    console.warn(`[WARNING] Missing Google OAuth variables for OTP sending: ${missingGmailVars.join(', ')}`);
+  }
   // Initialize automated post-meal ML sync cron jobs
   initMealSyncCron(io);
 });

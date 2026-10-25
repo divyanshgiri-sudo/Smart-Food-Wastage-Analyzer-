@@ -41,39 +41,37 @@ async function runTests() {
       body: JSON.stringify({ email: 'intruder@gmail.com' })
     });
     const data1 = await res1.json();
-    assert(res1.status === 400, 'Rejects non-student domain with 400');
-    assert(data1.error === 'Invalid domain. Students must use a @vitapstudent.ac.in email address.', 'Returns exact error message: Invalid domain. Students must use a @vitapstudent.ac.in email address.');
+    assert(res1.status === 400, 'Rejects non-VITAP domain with 400');
+    assert(data1.error === 'Invalid domain. Allowed emails must end with @vitapstudent.ac.in or @vitap.ac.in.', 'Returns exact error message on non-VITAP domain');
 
-    // 1b. Reject admin @vitap.ac.in domain on student login
+    // 1b. Accept @vitap.ac.in domain on student login (proceeds past domain validation)
     const res1b = await fetch(`${BASE}/api/auth/request-otp`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: 'admin@vitap.ac.in' })
+      body: JSON.stringify({ email: 'unregistered.admin@vitap.ac.in' })
     });
     const data1b = await res1b.json();
-    assert(res1b.status === 400, 'Rejects @vitap.ac.in domain with 400 on student login');
-    assert(data1b.error === 'Invalid domain. Students must use a @vitapstudent.ac.in email address.', 'Returns exact error message on @vitap.ac.in');
+    assert(res1b.status === 404, 'Accepts @vitap.ac.in domain through validation (returns 404 for unregistered account)');
+    assert(data1b.error === 'Account not found. Please sign up first.', 'Returns 404 error rather than domain 400');
 
     // 2. Domain restriction on /api/auth/register-request
     console.log('\n2. Testing Domain Restriction on Registration...');
     const res2 = await fetch(`${BASE}/api/auth/register-request`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: 'Hacker', email: 'intruder@yahoo.com', role: 'student' })
+      body: JSON.stringify({ name: 'Hacker', email: 'intruder@yahoo.com', role: 'student', studentId: '24BCE1111' })
     });
     const data2 = await res2.json();
-    assert(res2.status === 400, 'Rejects non-student domain with 400 on register');
-    assert(data2.error === 'Invalid domain. Students must use a @vitapstudent.ac.in email address.', 'Returns exact error message on register');
+    assert(res2.status === 400, 'Rejects non-VITAP domain with 400 on register');
+    assert(data2.error === 'Invalid domain. Allowed emails must end with @vitapstudent.ac.in or @vitap.ac.in.', 'Returns exact error message on register');
 
-    // 2b. Reject admin @vitap.ac.in domain on student register
+    // 2b. Accept @vitap.ac.in domain on student register
     const res2b = await fetch(`${BASE}/api/auth/register-request`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: 'Admin Intruder', email: 'admin@vitap.ac.in', role: 'student' })
+      body: JSON.stringify({ name: 'Vitap User', email: `user.${Date.now()}@vitap.ac.in`, role: 'student', studentId: '24BCE2222' })
     });
-    const data2b = await res2b.json();
-    assert(res2b.status === 400, 'Rejects @vitap.ac.in on student register with 400');
-    assert(data2b.error === 'Invalid domain. Students must use a @vitapstudent.ac.in email address.', 'Returns exact error message for @vitap.ac.in on register');
+    assert(res2b.status === 200, 'Accepts @vitap.ac.in on student register with 200');
 
     // 3. Login attempt with unregistered VIT-AP email
     console.log('\n3. Testing Login for Unregistered Account...');
@@ -138,22 +136,21 @@ async function runTests() {
     const dbStudent = store.getUserByEmail(studentEmail);
     assert(dbStudent !== null, 'User persisted in SQLite database');
 
-    // 6. Mess Admin Registration Blocked on Student Portal
-    console.log('\n6. Testing Mess Admin Registration Blocked on Student Portal...');
-    const adminEmail = `admin.${timestamp}@vitap.ac.in`;
+    // 6. Cross-domain restriction on unauthorized domain
+    console.log('\n6. Testing Non-VITAP Domain Rejection on Registration...');
+    const invalidEmail = `user.${timestamp}@outlook.com`;
     const res6 = await fetch(`${BASE}/api/auth/register-request`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        name: 'Rajesh Kumar',
-        email: adminEmail,
-        role: 'admin',
-        hostel: 'MH-3'
+        name: 'Outlook User',
+        email: invalidEmail,
+        studentId: '24BCE9999'
       })
     });
     const data6 = await res6.json();
-    assert(res6.status === 400, 'Admin registration rejected on student backend with 400');
-    assert(data6.error === 'Invalid domain. Students must use a @vitapstudent.ac.in email address.', 'Returns exact error message');
+    assert(res6.status === 400, 'Non-VITAP domain rejected with 400');
+    assert(data6.error === 'Invalid domain. Allowed emails must end with @vitapstudent.ac.in or @vitap.ac.in.', 'Returns exact allowed domain error message');
 
     // 7. Login Flow for Registered Student
     console.log('\n7. Testing Login Flow for Registered Student...');
@@ -199,8 +196,13 @@ async function runTests() {
     console.error('Test execution error:', err);
     failed++;
   } finally {
-    if (server) server.close();
-    process.exit(failed > 0 ? 1 : 0);
+    if (server) {
+      server.close(() => {
+        setTimeout(() => process.exit(failed > 0 ? 1 : 0), 100);
+      });
+    } else {
+      process.exit(failed > 0 ? 1 : 0);
+    }
   }
 }
 

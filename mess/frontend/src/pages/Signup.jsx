@@ -177,7 +177,7 @@ export default function Signup() {
                 <Mail size={18} style={{ position: 'absolute', left: '0.85rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
               </div>
               <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-                Only authorized emails ending with <strong>@vitap.ac.in</strong> or <strong>@vitapstudent.ac.in</strong> are permitted.
+                Must end with @vitapstudent.ac.in or @vitap.ac.in
               </p>
             </div>
 

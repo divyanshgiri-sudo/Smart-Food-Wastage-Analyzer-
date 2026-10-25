@@ -21,22 +21,26 @@ const ProtectedRoute = ({ children }) => {
   return children;
 };
 
+function RootRedirect() {
+  return <Navigate to="/dashboard" replace />;
+}
+
 function App() {
   return (
     <Router>
       <Routes>
+        <Route path="/" element={<RootRedirect />} />
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
         
         {/* Protected Dashboard Routes */}
-        <Route path="/" element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>}>
-          <Route index element={<Navigate to="/dashboard" replace />} />
-          <Route path="dashboard" element={<Dashboard />} />
-          <Route path="todays-meals" element={<TodaysMeals />} />
-          <Route path="predictions" element={<Predictions />} />
-          <Route path="attendance" element={<Attendance />} />
-          <Route path="history" element={<History />} />
-          <Route path="profile" element={<Profile />} />
+        <Route element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>}>
+          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/todays-meals" element={<TodaysMeals />} />
+          <Route path="/predictions" element={<Predictions />} />
+          <Route path="/attendance" element={<Attendance />} />
+          <Route path="/history" element={<History />} />
+          <Route path="/profile" element={<Profile />} />
         </Route>
       </Routes>
     </Router>

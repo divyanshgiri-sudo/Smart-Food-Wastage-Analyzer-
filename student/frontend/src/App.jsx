@@ -1,23 +1,17 @@
 /**
- * Smart Food Wastage Analyser — application routes.
+ * Smart Food Wastage Analyser — Student application routes.
  *
  *   /login          student sign-in
- *   /admin/login    mess staff sign-in
- *   /student/*      student portal   (guarded, role: student)
- *   /admin/*        mess staff portal (guarded, role: admin)
- *
- * Both role trees hang off the same AuthProvider and the same ProtectedRoute,
- * so adding the student half did not touch how the staff half authenticates.
+ *   /signup         student registration
+ *   /student/*      student portal (guarded, role: student)
  */
 
 import { Navigate, Route, Routes } from 'react-router-dom';
-import { AuthProvider, homePathForRole, useAuth } from './context/AuthContext';
+import { AuthProvider } from './context/AuthContext';
 import { ToastProvider } from './context/ToastContext';
 import ProtectedRoute from './components/ProtectedRoute';
 
 import Login from './pages/Login';
-import LoginStudent from './pages/LoginStudent';
-import LoginAdmin from './pages/LoginAdmin';
 import Signup from './pages/Signup';
 import NotFound from './pages/NotFound';
 
@@ -28,20 +22,11 @@ import StudentHistory from './pages/student/StudentHistory';
 import StudentNotifications from './pages/student/StudentNotifications';
 import StudentProfile from './pages/student/StudentProfile';
 
-import AdminLayout from './components/admin/AdminLayout';
-import AdminDashboard from './pages/admin/AdminDashboard';
-import AdminPredictions from './pages/admin/AdminPredictions';
-import AdminAttendance from './pages/admin/AdminAttendance';
-import AdminAnalytics from './pages/admin/AdminAnalytics';
-
 import './styles/student.css';
-import './styles/admin.css';
 
-/** Sends visitors at "/" to their own portal, or to the student sign-in. */
+/** Sends visitors at "/" to the student portal. */
 function RootRedirect() {
-  const { isAuthenticated, role, bootstrapping } = useAuth();
-  if (bootstrapping) return null;
-  return <Navigate to={isAuthenticated ? homePathForRole(role) : '/login'} replace />;
+  return <Navigate to="/student/dashboard" replace />;
 }
 
 export default function App() {
@@ -52,7 +37,6 @@ export default function App() {
           <Route path="/" element={<RootRedirect />} />
 
           <Route path="/login" element={<Login />} />
-          <Route path="/admin/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
 
           {/* ---------------- Student portal ---------------- */}
@@ -64,17 +48,6 @@ export default function App() {
               <Route path="history" element={<StudentHistory />} />
               <Route path="notifications" element={<StudentNotifications />} />
               <Route path="profile" element={<StudentProfile />} />
-            </Route>
-          </Route>
-
-          {/* ---------------- Mess staff portal ---------------- */}
-          <Route element={<ProtectedRoute role="admin" loginPath="/admin/login" />}>
-            <Route path="/admin" element={<AdminLayout />}>
-              <Route index element={<Navigate to="/admin/dashboard" replace />} />
-              <Route path="dashboard" element={<AdminDashboard />} />
-              <Route path="predictions" element={<AdminPredictions />} />
-              <Route path="attendance" element={<AdminAttendance />} />
-              <Route path="analytics" element={<AdminAnalytics />} />
             </Route>
           </Route>
 

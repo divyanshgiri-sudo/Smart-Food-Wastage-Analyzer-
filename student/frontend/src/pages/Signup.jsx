@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
-import { homePathForRole, useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/AuthContext';
 
 /* ── Inline SVG icon components ── */
 const UserIcon = () => (
@@ -103,7 +103,7 @@ export default function Signup() {
   const [submitting, setSubmitting] = useState(false);
 
   if (!bootstrapping && isAuthenticated) {
-    return <Navigate to={homePathForRole(role)} replace />;
+    return <Navigate to="/student/dashboard" replace />;
   }
 
   async function handleRequestOtp(event) {
@@ -165,8 +165,8 @@ export default function Signup() {
     setFormError('');
 
     try {
-      const user = await registerVerify(email.trim().toLowerCase(), trimmedOtp);
-      navigate(homePathForRole(user.role), { replace: true });
+      await registerVerify(email.trim().toLowerCase(), trimmedOtp);
+      navigate('/student/dashboard', { replace: true });
     } catch (error) {
       setFormError(error.message || 'Invalid or expired code. Please try again.');
     } finally {
@@ -361,7 +361,7 @@ export default function Signup() {
                 <span style={iconWrapStyle}><MailIcon /></span>
               </div>
               <p style={{ fontSize: '0.75rem', color: '#667085', marginTop: '0.35rem' }}>
-                Must end with @vitapstudent.ac.in.
+                Must end with @vitapstudent.ac.in or @vitap.ac.in
               </p>
             </div>
 

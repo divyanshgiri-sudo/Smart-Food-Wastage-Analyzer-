@@ -1,5 +1,5 @@
 require('dotenv').config();
-const nodemailer = require('nodemailer');
+const { google } = require('googleapis');
 const jwt = require('jsonwebtoken');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'vitap-smart-mess-jwt-secret-key-2026';
@@ -11,44 +11,91 @@ const otpStore = new Map();
 function isVitapEmail(email) {
   if (!email || typeof email !== 'string') return false;
   const normalized = email.trim().toLowerCase();
-  return normalized.endsWith('@vitapstudent.ac.in');
+  return normalized.endsWith('@vitapstudent.ac.in') || normalized.endsWith('@vitap.ac.in');
 }
 
 function generateOtp() {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS
-  }
-});
+// Initialize Google OAuth2 client using GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, and GMAIL_REFRESH_TOKEN
+const oAuth2Client = new google.auth.OAuth2(
+  process.env.GMAIL_CLIENT_ID,
+  process.env.GMAIL_CLIENT_SECRET,
+  process.env.GMAIL_REDIRECT_URI || 'https://developers.google.com/oauthplayground'
+);
+
+const initialCredentials = {};
+if (process.env.GMAIL_REFRESH_TOKEN) initialCredentials.refresh_token = process.env.GMAIL_REFRESH_TOKEN;
+if (process.env.GMAIL_ACCESS_TOKEN) initialCredentials.access_token = process.env.GMAIL_ACCESS_TOKEN;
+if (Object.keys(initialCredentials).length > 0) {
+  oAuth2Client.setCredentials(initialCredentials);
+}
+
+const gmail = google.gmail({ version: 'v1', auth: oAuth2Client });
 
 async function sendOtpEmail(email, otp) {
-  const mailOptions = {
-    from: process.env.EMAIL_FROM || `"VIT-AP Smart Mess" <${process.env.EMAIL_USER}>`,
-    to: email,
-    subject: 'VIT-AP Smart Mess — Login Verification Code',
-    text: `Your login verification code for VIT-AP Smart Mess is: ${otp}\n\nThis code is valid for 5 minutes. Do not share it with anyone.`,
-    html: `
-      <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 8px;">
-        <h2 style="color: #1e293b; margin-top: 0;">Smart Mess Login Verification</h2>
-        <p style="color: #475569; font-size: 15px;">Your one-time login verification code for VIT-AP Smart Mess is:</p>
-        <div style="background-color: #f1f5f9; padding: 16px; border-radius: 6px; text-align: center; margin: 20px 0;">
-          <span style="font-size: 32px; font-weight: bold; letter-spacing: 6px; color: #4f46e5;">${otp}</span>
-        </div>
-        <p style="color: #64748b; font-size: 13px; margin-bottom: 0;">This OTP will expire in 5 minutes. If you did not request this OTP, you can safely ignore this email.</p>
+  const missingKeys = ['GMAIL_CLIENT_ID', 'GMAIL_CLIENT_SECRET', 'GMAIL_REFRESH_TOKEN'].filter(
+    (key) => !process.env[key]
+  );
+  if (missingKeys.length > 0) {
+    console.error(`[AUTH] Missing Gmail OAuth2 configuration: ${missingKeys.join(', ')}`);
+  }
+
+  // Ensure latest credentials are bound to oAuth2Client
+  const currentCredentials = {};
+  if (process.env.GMAIL_REFRESH_TOKEN) currentCredentials.refresh_token = process.env.GMAIL_REFRESH_TOKEN;
+  if (process.env.GMAIL_ACCESS_TOKEN) currentCredentials.access_token = process.env.GMAIL_ACCESS_TOKEN;
+  if (Object.keys(currentCredentials).length > 0) {
+    oAuth2Client.setCredentials(currentCredentials);
+  }
+
+  const senderEmail = process.env.GMAIL_USER || 'vitap.smartmess@gmail.com';
+  const fromAddress = process.env.EMAIL_FROM || `"VIT-AP Smart Mess" <${senderEmail}>`;
+  const subject = 'VIT-AP Smart Mess — Login Verification Code';
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 8px;">
+      <h2 style="color: #1e293b; margin-top: 0;">Smart Mess Login Verification</h2>
+      <p style="color: #475569; font-size: 15px;">Your one-time login verification code for VIT-AP Smart Mess is:</p>
+      <div style="background-color: #f1f5f9; padding: 16px; border-radius: 6px; text-align: center; margin: 20px 0;">
+        <span style="font-size: 32px; font-weight: bold; letter-spacing: 6px; color: #4f46e5;">${otp}</span>
       </div>
-    `,
-  };
+      <p style="color: #64748b; font-size: 13px; margin-bottom: 0;">This OTP will expire in 5 minutes. If you did not request this OTP, you can safely ignore this email.</p>
+    </div>
+  `;
+
+  // Construct RFC 2822 email message
+  const utf8Subject = `=?utf-8?B?${Buffer.from(subject).toString('base64')}?=`;
+  const messageParts = [
+    `From: ${fromAddress}`,
+    `To: ${email}`,
+    `Subject: ${utf8Subject}`,
+    'MIME-Version: 1.0',
+    'Content-Type: text/html; charset=utf-8',
+    '',
+    html.trim(),
+  ];
+  const rawEmail = messageParts.join('\r\n');
+
+  // Base64url encode the raw email string
+  const encodedMessage = Buffer.from(rawEmail)
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
 
   try {
-    const info = await transporter.sendMail(mailOptions);
-    console.log(`[AUTH] OTP email sent to ${email} (messageId: ${info.messageId || 'mock'})`);
+    const res = await gmail.users.messages.send({
+      userId: 'me',
+      requestBody: {
+        raw: encodedMessage,
+      },
+    });
+
+    console.log(`[AUTH] OTP email sent to ${email} via Gmail API (messageId: ${res.data?.id || 'mock'})`);
+    return res.data;
   } catch (err) {
-    console.error(`[AUTH] Could not send email via transporter: ${err.message}`);
+    console.error(`[AUTH] Could not send email via Gmail API: ${err.message}`);
   }
   console.log(`[AUTH] >>> OTP for ${email}: ${otp} (valid for 5 mins) <<<`);
 }
@@ -84,16 +131,7 @@ function verifyOtp(email, otp) {
 }
 
 function determineRole(email, requestedRole, defaultRole = 'student') {
-  const normalized = String(email || '').trim().toLowerCase();
-  if (normalized.endsWith('@vitap.ac.in')) {
-    return 'admin';
-  }
-  if (normalized.endsWith('@vitapstudent.ac.in')) {
-    if (requestedRole === 'admin') return 'admin';
-    if (defaultRole === 'admin') return 'admin';
-    return 'student';
-  }
-  return defaultRole;
+  return 'student';
 }
 
 function issueToken(payload) {

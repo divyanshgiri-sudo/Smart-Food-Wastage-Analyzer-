@@ -8,12 +8,12 @@
  */
 
 import { useState } from 'react';
-import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
-import { homePathForRole, useAuth } from '../context/AuthContext';
+import { Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import '../styles/login.css';
 
 export default function LoginStudent() {
-  const { login, isAuthenticated, role, bootstrapping } = useAuth();
+  const { login, isAuthenticated, bootstrapping } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -22,9 +22,9 @@ export default function LoginStudent() {
   const [formError, setFormError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  // Already signed in: go straight to whichever portal this account belongs to.
+  // Already signed in: go straight to the student portal.
   if (!bootstrapping && isAuthenticated) {
-    return <Navigate to={homePathForRole(role)} replace />;
+    return <Navigate to="/student/dashboard" replace />;
   }
 
   function update(field, value) {
@@ -51,11 +51,8 @@ export default function LoginStudent() {
     setSubmitting(true);
     setFormError('');
     try {
-      const user = await login(form.email.trim(), form.password);
-      // A staff account signing in here is still routed by its own role.
-      const target = location.state?.from && user.role === 'student'
-        ? location.state.from
-        : homePathForRole(user.role);
+      await login(form.email.trim(), form.password);
+      const target = location.state?.from || '/student/dashboard';
       navigate(target, { replace: true });
     } catch (error) {
       setFormError(error.message || 'Could not sign you in. Please try again.');
@@ -174,10 +171,6 @@ export default function LoginStudent() {
               <span>Password</span> <code>Student@123</code>
             </p>
           </div>
-
-          <p className="login-switch">
-            Mess staff? <Link to="/admin/login">Go to the staff dashboard sign-in</Link>
-          </p>
         </div>
       </section>
     </div>

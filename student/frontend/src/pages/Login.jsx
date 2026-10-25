@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
-import { homePathForRole, useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/AuthContext';
 
 /* ── Inline SVG icon components ── */
 const MailIcon = () => (
@@ -37,9 +37,9 @@ export default function Login() {
   const [successMsg, setSuccessMsg] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  // Already signed in: navigate straight to the appropriate dashboard
+  // Already signed in: navigate straight to the student dashboard
   if (!bootstrapping && isAuthenticated) {
-    return <Navigate to={homePathForRole(role)} replace />;
+    return <Navigate to="/student/dashboard" replace />;
   }
 
   async function handleRequestOtp(event) {
@@ -79,8 +79,8 @@ export default function Login() {
     setFormError('');
 
     try {
-      const user = await loginWithOtp(email.trim().toLowerCase(), trimmedOtp);
-      const target = location.state?.from || homePathForRole(user.role);
+      await loginWithOtp(email.trim().toLowerCase(), trimmedOtp);
+      const target = location.state?.from || '/student/dashboard';
       navigate(target, { replace: true });
     } catch (error) {
       setFormError(error.message || 'Invalid or expired OTP. Please try again.');
@@ -192,7 +192,7 @@ export default function Login() {
                 </span>
               </div>
               <p style={{ fontSize: '0.75rem', color: '#667085', marginTop: '0.4rem', lineHeight: '1.4' }}>
-                Must end with @vitapstudent.ac.in.
+                Must end with @vitapstudent.ac.in or @vitap.ac.in
               </p>
             </div>
 

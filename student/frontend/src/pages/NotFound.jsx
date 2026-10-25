@@ -1,9 +1,9 @@
 import { Link } from 'react-router-dom';
-import { homePathForRole, useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/AuthContext';
 
 export default function NotFound() {
-  const { isAuthenticated, role } = useAuth();
-  const home = isAuthenticated ? homePathForRole(role) : '/login';
+  const { isAuthenticated } = useAuth();
+  const home = isAuthenticated ? '/student/dashboard' : '/login';
 
   return (
     <div style={{ minHeight: '100dvh', display: 'grid', placeItems: 'center', padding: 24 }}>

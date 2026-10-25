@@ -1,20 +1,11 @@
 /**
- * Shared authentication for both portals.
- *
- * The role returned by the login endpoint is the single source of truth for
- * which portal a session may enter, so adding the student role did not require
- * a second auth system alongside the mess-staff one.
+ * Authentication context for student portal.
  */
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { authApi, cachedUser, SESSION_EXPIRED_EVENT, tokenStore } from '../services/api';
 
 const AuthContext = createContext(null);
-
-/** Where each role belongs after signing in. */
-export function homePathForRole(role) {
-  return role === 'admin' ? '/admin/dashboard' : '/student/dashboard';
-}
 
 function decodeJwt(token) {
   try {

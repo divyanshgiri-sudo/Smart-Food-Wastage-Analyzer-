@@ -1,14 +1,12 @@
 /**
- * Route guard shared by both portals.
+ * Route guard for the student portal.
  *
- * Anonymous visitors are sent to the right sign-in page and, once they have
- * signed in, forwarded to the page they originally asked for. A signed-in user
- * who reaches for the other portal's routes is redirected to their own home
- * rather than shown an error, which keeps admin pages out of student sessions.
+ * Anonymous visitors are sent to the sign-in page and, once they have
+ * signed in, forwarded to the page they originally asked for.
  */
 
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
-import { homePathForRole, useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/AuthContext';
 import { LoadingState } from './common/StateBlocks';
 
 export default function ProtectedRoute({ role, loginPath = '/login' }) {
@@ -30,7 +28,7 @@ export default function ProtectedRoute({ role, loginPath = '/login' }) {
   }
 
   if (role && userRole !== role) {
-    return <Navigate to={homePathForRole(userRole)} replace />;
+    return <Navigate to="/student/dashboard" replace />;
   }
 
   return <Outlet />;
