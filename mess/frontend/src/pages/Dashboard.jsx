@@ -8,6 +8,7 @@ export default function Dashboard() {
   const [recentActivity, setRecentActivity] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [currentTime, setCurrentTime] = useState(() => new Date());
 
   // Hardware Mode & Enrollment states
   const [hardwareMode, setHardwareMode] = useState('verify');
@@ -17,8 +18,20 @@ export default function Dashboard() {
   const [enrollMessage, setEnrollMessage] = useState(null);
   const [enrolling, setEnrolling] = useState(false);
 
+  // Timer to dynamically update the active meal based on local system clock
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 10000); // Check every 10 seconds
+    return () => clearInterval(timer);
+  }, []);
+
   const fetchSummary = useCallback(() => {
-    fetch(`${API_BASE_URL}/api/dashboard/summary`)
+    const now = new Date();
+    const localMinutes = now.getHours() * 60 + now.getMinutes();
+    const localDateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+    fetch(`${API_BASE_URL}/api/dashboard/summary?localMinutes=${localMinutes}&date=${localDateStr}`)
       .then(res => res.json())
       .then(json => {
         setDashboardData(json);
@@ -98,6 +111,7 @@ export default function Dashboard() {
       if (newNotification) {
         setNotifications(prev => [newNotification, ...prev].slice(0, 5));
       }
+      fetchSummary();
     };
 
     const handleIntentUpdate = (intentData) => {
@@ -236,44 +250,98 @@ export default function Dashboard() {
   if (loading) return <div>Loading...</div>;
   if (!dashboardData) return <div>Error loading data.</div>;
 
-    const formattedCurrentDate = new Date().toLocaleDateString('en-US', {
+  const formattedCurrentDate = currentTime.toLocaleDateString('en-US', {
     weekday: 'long',
     year: 'numeric',
     month: 'long',
     day: 'numeric',
   });
 
-  const currentMeal = dashboardData.currentMeal || {
-    name: 'Breakfast',
-    label: 'Breakfast (07:00 - 09:00)',
-    predicted: dashboardData.summary?.predicted || 280,
-    confirmed: dashboardData.summary?.confirmed || 268,
-    actual: dashboardData.summary?.actualSoFar || 254,
-    accuracy: dashboardData.summary?.accuracy || 95.0,
-    status: 'Serving',
+  const localMinutes = currentTime.getHours() * 60 + currentTime.getMinutes();
+
+  // Dynamic active meal resolution based on local system clock
+  const defaultMealWindows = [
+    { id: 'breakfast', name: 'Breakfast', label: 'Breakfast (07:00 - 09:00)', time: '07:00 - 09:00', startMin: 420, endMin: 540, predicted: 0, confirmed: 0, actual: 0 },
+    { id: 'lunch', name: 'Lunch', label: 'Lunch (12:30 - 14:15)', time: '12:30 - 14:15', startMin: 750, endMin: 855, predicted: 0, confirmed: 0, actual: 0 },
+    { id: 'dinner', name: 'Dinner', label: 'Dinner (19:15 - 21:00)', time: '19:15 - 21:00', startMin: 1155, endMin: 1260, predicted: 0, confirmed: 0, actual: 0 },
+  ];
+
+  const availableMeals = (dashboardData?.meals && dashboardData.meals.length > 0)
+    ? dashboardData.meals
+    : defaultMealWindows;
+
+  const sortedMeals = [...availableMeals].sort((a, b) => a.startMin - b.startMin);
+
+  let activeMeal = null;
+  let activeStatus = 'Serving';
+
+  // 1. Is local time inside any meal's serving window?
+  const currentlyServing = sortedMeals.find(m => localMinutes >= m.startMin && localMinutes <= m.endMin);
+  if (currentlyServing) {
+    activeMeal = currentlyServing;
+    activeStatus = 'Serving';
+  } else {
+    // 2. Meal transition windows:
+    const lunch = sortedMeals.find(m => m.id === 'lunch');
+    const dinner = sortedMeals.find(m => m.id === 'dinner');
+    const lunchStart = lunch ? lunch.startMin : 750;
+    const dinnerStart = dinner ? dinner.startMin : 1155;
+
+    if (localMinutes < lunchStart) {
+      // Before lunch start (12:30 PM), active meal is Breakfast
+      const breakfast = sortedMeals.find(m => m.id === 'breakfast') || sortedMeals[0];
+      activeMeal = breakfast;
+      activeStatus = localMinutes < breakfast.startMin ? 'Upcoming' : 'Completed';
+    } else if (localMinutes < dinnerStart) {
+      // Between lunch start (12:30 PM) and dinner start (19:15 PM), active meal is Lunch
+      activeMeal = lunch || sortedMeals[1] || sortedMeals[0];
+      activeStatus = (lunch && localMinutes <= lunch.endMin) ? 'Serving' : 'Completed';
+    } else {
+      // At or after dinner start (19:15 PM), active meal is Dinner
+      const dinnerMeal = dinner || sortedMeals[sortedMeals.length - 1];
+      activeMeal = dinnerMeal;
+      activeStatus = localMinutes <= dinnerMeal.endMin ? 'Serving' : 'Completed';
+    }
+  }
+
+  // Next meal candidate
+  const activeIndex = sortedMeals.findIndex(m => m.id === activeMeal.id);
+  const nextMealCandidate = sortedMeals[(activeIndex + 1) % sortedMeals.length] || sortedMeals[0];
+
+  const currentMeal = {
+    ...activeMeal,
+    status: activeStatus,
+    label: activeMeal.label || `${activeMeal.name} (${activeMeal.time})`,
+    predicted: activeMeal.predicted ?? (dashboardData?.summary?.predicted ?? 0),
+    confirmed: activeMeal.confirmed ?? (dashboardData?.summary?.confirmed ?? 0),
+    actual: activeMeal.actual ?? (dashboardData?.summary?.actualSoFar ?? 0),
   };
 
-  const nextMeal = dashboardData.nextMeal || {
-    label: 'Dinner (19:15 - 21:00)',
-    predicted: 567,
-    confirmed: 580,
-    recommended: 570,
+  const nextMeal = {
+    ...nextMealCandidate,
+    label: nextMealCandidate.label || `${nextMealCandidate.name} (${nextMealCandidate.time})`,
+    predicted: nextMealCandidate.predicted ?? 0,
+    confirmed: nextMealCandidate.confirmed ?? 0,
+    recommended: nextMealCandidate.recommended ?? Math.round((nextMealCandidate.confirmed || nextMealCandidate.predicted || 0) * 0.98),
   };
 
-  const fullDay = dashboardData.fullDay || {
-    predicted: (dashboardData.summary?.predicted || 280) * 3,
-    confirmed: (dashboardData.summary?.confirmed || 268) * 3,
-    actual: dashboardData.summary?.actualSoFar || 254,
-    accuracy: dashboardData.summary?.accuracy || 94.8,
+  const fullDayPredicted = sortedMeals.reduce((sum, m) => sum + (m.predicted ?? 0), 0);
+  const fullDayConfirmed = sortedMeals.reduce((sum, m) => sum + (m.confirmed ?? 0), 0);
+  const fullDayActual = sortedMeals.reduce((sum, m) => sum + (m.actual ?? 0), 0);
+
+  const fullDay = {
+    predicted: fullDayPredicted,
+    confirmed: fullDayConfirmed,
+    actual: fullDayActual,
   };
 
   const currentAccuracy = (currentMeal.confirmed > 0 && currentMeal.actual > 0)
     ? Math.min(100, (currentMeal.actual / currentMeal.confirmed) * 100)
-    : (Number(currentMeal.accuracy) || 95.0);
+    : 0;
 
   const overallAccuracy = (fullDay.confirmed > 0 && fullDay.actual > 0)
     ? Math.min(100, (fullDay.actual / fullDay.confirmed) * 100)
-    : (Number(fullDay.accuracy) || 94.8);
+    : 0;
 
   return (
     <div>
@@ -446,7 +514,7 @@ export default function Dashboard() {
               <h3 style={{ fontSize: '0.875rem', color: 'var(--text-muted)', fontWeight: 500 }}>Current Accuracy</h3>
               <Clock size={18} color="var(--primary-color)" />
             </div>
-            <div style={{ fontSize: '2rem', fontWeight: 700 }}>{currentAccuracy.toFixed(4)}%</div>
+            <div style={{ fontSize: '2rem', fontWeight: 700 }}>{currentAccuracy > 0 ? `${currentAccuracy.toFixed(1)}%` : '0%'}</div>
             <div style={{ fontSize: '0.75rem', color: 'var(--success-color)', marginTop: '0.5rem' }}>Active meal ratio</div>
           </div>
         </div>
@@ -547,7 +615,7 @@ export default function Dashboard() {
 
           <div className="card">
             <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', fontWeight: 500, marginBottom: '0.5rem' }}>Overall Daily Accuracy</div>
-            <div style={{ fontSize: '1.75rem', fontWeight: 700 }}>{overallAccuracy.toFixed(4)}%</div>
+            <div style={{ fontSize: '1.75rem', fontWeight: 700 }}>{overallAccuracy > 0 ? `${overallAccuracy.toFixed(1)}%` : '0%'}</div>
             <div style={{ fontSize: '0.75rem', color: 'var(--success-color)', marginTop: '0.25rem' }}>Attendance vs Opt-ins</div>
           </div>
         </div>

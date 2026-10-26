@@ -15,7 +15,7 @@
  */
 
 const { db, dbPath } = require('./db');
-const { seedReferenceData, seedDemoHistory } = require('./db/seed');
+const { seedReferenceData } = require('./db/seed');
 
 const MINUTE = 60 * 1000;
 
@@ -59,7 +59,6 @@ function atMinutes(dateKey, mins) {
 
 try {
   seedReferenceData();
-  seedDemoHistory({ toDateKey, addDays, atMinutes, minutesNow });
 } catch (err) {
   if (err.message.includes('locked') || err.message.includes('busy')) {
     console.log('[store] Database locked by another process during startup seed; skipping redundant seed.');

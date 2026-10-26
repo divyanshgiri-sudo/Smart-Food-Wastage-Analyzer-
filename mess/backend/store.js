@@ -15,27 +15,32 @@
  */
 
 const { db, dbPath } = require('./db');
-const { seedReferenceData, seedDemoHistory } = require('./db/seed');
+const { seedReferenceData } = require('./db/seed');
 
 const MINUTE = 60 * 1000;
+const TIMEZONE = process.env.TIMEZONE || 'Asia/Kolkata';
 
 /* ------------------------------------------------------------------ *
  * Date helpers
  * ------------------------------------------------------------------ */
 
-function toDateKey(date) {
+function toDateKey(date, timeZone = TIMEZONE) {
   if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
     return date;
   }
   const d = date instanceof Date ? date : new Date(date || Date.now());
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+  try {
+    return new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
+  } catch (e) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
 }
 
-function getTodayDateKey() {
-  return toDateKey(new Date());
+function getTodayDateKey(timeZone = TIMEZONE) {
+  return toDateKey(new Date(), timeZone);
 }
 
 function addDays(date, days) {
@@ -44,8 +49,20 @@ function addDays(date, days) {
   return next;
 }
 
-function minutesNow(now = new Date()) {
-  return now.getHours() * 60 + now.getMinutes();
+function minutesNow(now = new Date(), timeZone = TIMEZONE) {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      hour: 'numeric',
+      minute: 'numeric',
+      hourCycle: 'h23',
+    }).formatToParts(now);
+    const hour = parseInt(parts.find((p) => p.type === 'hour').value, 10);
+    const minute = parseInt(parts.find((p) => p.type === 'minute').value, 10);
+    return hour * 60 + minute;
+  } catch (e) {
+    return now.getHours() * 60 + now.getMinutes();
+  }
 }
 
 function atMinutes(dateKey, mins) {
@@ -59,7 +76,6 @@ function atMinutes(dateKey, mins) {
 
 try {
   seedReferenceData();
-  seedDemoHistory({ toDateKey, addDays, atMinutes, minutesNow });
 } catch (err) {
   if (err.message.includes('locked') || err.message.includes('busy')) {
     console.log('[store] Database locked by another process during startup seed; skipping redundant seed.');
@@ -521,7 +537,21 @@ function setPreferences(studentId, patch) {
  * fingerprint phases, and every screen that shows them says so.
  */
 
-const messTotals = { registeredStudents: 486, respondedToday: 341 };
+function getRegisteredStudentCount() {
+  try {
+    const row = db.prepare("SELECT COUNT(*) as count FROM users WHERE role = 'student'").get();
+    return row?.count || 19;
+  } catch (err) {
+    return 19;
+  }
+}
+
+const messTotals = {
+  get registeredStudents() {
+    return getRegisteredStudentCount();
+  },
+  respondedToday: 0,
+};
 
 const MEAL_BASELINES = {
   breakfast: 280,
@@ -529,18 +559,12 @@ const MEAL_BASELINES = {
   dinner: 567,
 };
 
-// A fixed response profile per meal, not a live tally of the tables above.
-const ADMIN_RESPONSE_PROFILE = {
-  breakfast: { attending: 268, notAttending: 74, prepared: 280, served: 254 },
-  lunch: { attending: 392, notAttending: 41, prepared: 410, served: 0 },
-  dinner: { attending: 187, notAttending: 63, prepared: 567, served: 0 },
-};
-
-function adminMealSnapshot() {
+function adminMealSnapshot(customDateKey, customMinutes) {
   const today = new Date();
-  const dateKey = toDateKey(today);
+  const dateKey = customDateKey || toDateKey(today);
   const menu = menuForDay(today.getDay());
-  const nowMin = minutesNow(today);
+  const nowMin = customMinutes !== undefined && customMinutes !== null ? Number(customMinutes) : minutesNow(today);
+  const totalStudents = getRegisteredStudentCount();
 
   const liveAttendingStmt = db.prepare(`
     SELECT COUNT(*) as count FROM meal_intents WHERE meal_date = ? AND meal_id = ? AND intent = 'attending'
@@ -563,15 +587,14 @@ function adminMealSnapshot() {
       statusRaw = 'serving';
     }
 
-    const profile = ADMIN_RESPONSE_PROFILE[meal.id] || { attending: 0, notAttending: 0, prepared: 0, served: 0 };
     const dbAttending = liveAttendingStmt.get(dateKey, meal.id)?.count || 0;
     const dbNotAttending = liveNotAttendingStmt.get(dateKey, meal.id)?.count || 0;
     const dbServed = liveServedStmt.get(dateKey, meal.id)?.count || 0;
 
-    const attending = profile.attending + dbAttending;
-    const notAttending = profile.notAttending + dbNotAttending;
-    const served = Math.max(profile.served + dbServed, dbServed);
-    const predicted = profile.prepared || MEAL_BASELINES[meal.id] || 0;
+    const attending = dbAttending;
+    const notAttending = dbNotAttending;
+    const served = dbServed;
+    const predicted = MEAL_BASELINES[meal.id] || attending;
 
     return {
       id: meal.id,
@@ -591,7 +614,7 @@ function adminMealSnapshot() {
       notAttending,
       actual: served,
       served,
-      noResponse: Math.max(0, messTotals.registeredStudents - attending - notAttending),
+      noResponse: Math.max(0, totalStudents - attending - notAttending),
     };
   });
 }
@@ -664,6 +687,7 @@ module.exports = {
   recordHardwareScan,
   getLiveStats,
   adminMealSnapshot,
+  getRecentActivity,
   getHardwareStatus,
   setHardwareMode,
   recordCapturedFingerprint,
@@ -864,17 +888,25 @@ function recordHardwareScan({ studentId, fingerprintId, deviceId }) {
   const regNo = userRow.student_id || userRow.id;
   const name = userRow.name || regNo;
 
-  // 2. Active Meal Resolution with Fallback
+  // 2. Active Meal Resolution
   const nowMin = minutesNow();
   const listMealsStmt = db.prepare('SELECT * FROM meals ORDER BY sort_order');
   const allMeals = listMealsStmt.all(); // breakfast, lunch, dinner
   let activeMeal = allMeals.find((m) => nowMin >= m.start_min && nowMin <= m.end_min);
 
   if (!activeMeal) {
-    activeMeal = allMeals.find((m) => nowMin < m.start_min);
-  }
-  if (!activeMeal) {
-    activeMeal = allMeals[allMeals.length - 1] || allMeals[0];
+    const lunch = allMeals.find((m) => m.id === 'lunch');
+    const dinner = allMeals.find((m) => m.id === 'dinner');
+    const lunchStart = lunch ? lunch.start_min : 750;
+    const dinnerStart = dinner ? dinner.start_min : 1155;
+
+    if (nowMin < lunchStart) {
+      activeMeal = allMeals.find((m) => m.id === 'breakfast') || allMeals[0];
+    } else if (nowMin < dinnerStart) {
+      activeMeal = lunch || allMeals[1] || allMeals[0];
+    } else {
+      activeMeal = dinner || allMeals[allMeals.length - 1];
+    }
   }
   const mealId = activeMeal.id;
   const dateKey = toDateKey(new Date());
@@ -1000,33 +1032,56 @@ function getRecentActivity(limit = 6) {
   ];
 }
 
-function getLiveStats() {
-  const todayKey = toDateKey(new Date());
-  const nowMin = minutesNow();
-  const meals = adminMealSnapshot();
+function getLiveStats(customMinutes, customDate) {
+  const todayKey = customDate || toDateKey(new Date());
+  const nowMin = customMinutes !== undefined && customMinutes !== null ? Number(customMinutes) : minutesNow();
+  const meals = adminMealSnapshot(todayKey, nowMin);
 
-  let currentMeal = meals.find((m) => nowMin >= m.startMin && nowMin <= m.endMin);
-  if (!currentMeal) {
-    currentMeal = meals.find((m) => nowMin < m.startMin);
-  }
-  if (!currentMeal) {
-    currentMeal = meals[meals.length - 1] || meals[0];
+  // Dynamic active meal resolution based on local clock windows:
+  // Sort meals by startMin
+  const sorted = [...meals].sort((a, b) => a.startMin - b.startMin);
+
+  let currentMeal = null;
+  // 1. Is any meal currently in its serving window?
+  const activeServing = sorted.find((m) => nowMin >= m.startMin && nowMin <= m.endMin);
+  if (activeServing) {
+    currentMeal = activeServing;
+  } else {
+    // 2. Meal transition windows:
+    // Before lunch starts (e.g. before 12:30 PM):
+    // Active meal is Breakfast (Upcoming before 7:00 AM, Completed after 9:00 AM)
+    const lunch = sorted.find((m) => m.id === 'lunch');
+    const lunchStart = lunch ? lunch.startMin : 750;
+    const dinner = sorted.find((m) => m.id === 'dinner');
+    const dinnerStart = dinner ? dinner.startMin : 1155;
+
+    if (nowMin < lunchStart) {
+      currentMeal = sorted.find((m) => m.id === 'breakfast') || sorted[0];
+    } else if (nowMin < dinnerStart) {
+      // Between lunch start (12:30 PM) and dinner start (19:15 PM):
+      // Active meal is Lunch (Serving until 14:15, Completed 14:15-19:15)
+      currentMeal = lunch || sorted[1] || sorted[0];
+    } else {
+      // At or after dinner start (19:15 PM onwards):
+      // Active meal is Dinner
+      currentMeal = dinner || sorted[sorted.length - 1];
+    }
   }
 
-  const currentIndex = meals.findIndex((m) => m.id === currentMeal.id);
-  const nextMeal = meals[(currentIndex + 1) % meals.length] || meals[0];
+  const currentIndex = sorted.findIndex((m) => m.id === currentMeal.id);
+  const nextMeal = sorted[(currentIndex + 1) % sorted.length] || sorted[0];
 
   const fullDayPredicted = meals.reduce((sum, m) => sum + m.predicted, 0);
   const fullDayConfirmed = meals.reduce((sum, m) => sum + m.confirmed, 0);
   const fullDayActual = meals.reduce((sum, m) => sum + m.actual, 0);
   const fullDayAccuracy = (fullDayConfirmed > 0 && fullDayActual > 0)
     ? Math.min(100, (fullDayActual / fullDayConfirmed) * 100)
-    : 94.8;
+    : 0;
 
   const currentMealPredicted = currentMeal.predicted || MEAL_BASELINES[currentMeal.id] || 0;
   const currentMealAccuracy = (currentMeal.confirmed > 0 && currentMeal.actual > 0)
     ? Math.min(100, (currentMeal.actual / currentMeal.confirmed) * 100)
-    : 95.0;
+    : 0;
 
   const nextMealPredicted = nextMeal.predicted || MEAL_BASELINES[nextMeal.id] || 0;
 

@@ -24,6 +24,11 @@ export default function Predictions() {
 
   if (loading) return <div>Loading...</div>;
 
+  const chartData = (mealFilter === 'All Meals'
+    ? history
+    : history.filter(item => (item.meal || '').toLowerCase() === mealFilter.toLowerCase())
+  ).slice(0, 14).reverse();
+
   return (
     <div>
       <div className="flex justify-between items-center" style={{ marginBottom: '1.5rem' }}>
@@ -42,9 +47,9 @@ export default function Predictions() {
       </div>
 
       <div className="card" style={{ marginBottom: '2rem', height: '400px' }}>
-        <h3 style={{ fontSize: '1.125rem', marginBottom: '1.5rem' }}>7-Day Historical Trend ({mealFilter})</h3>
+        <h3 style={{ fontSize: '1.125rem', marginBottom: '1.5rem' }}>Historical Trend ({mealFilter})</h3>
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={history} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+          <LineChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
             <XAxis dataKey="date" tick={{ fill: 'var(--text-muted)' }} axisLine={{ stroke: 'var(--border-color)' }} />
             <YAxis tick={{ fill: 'var(--text-muted)' }} axisLine={{ stroke: 'var(--border-color)' }} />

@@ -40,17 +40,24 @@ export default function History() {
               </tr>
             </thead>
             <tbody>
-              {history.map((record, index) => (
-                <tr key={index}>
-                  <td style={{ fontWeight: 500 }}>{record.date}</td>
-                  <td>{record.meal}</td>
-                  <td>{record.predicted}</td>
-                  <td>{record.actual}</td>
-                  <td>
-                    <span className="badge badge-success">Verified</span>
-                  </td>
-                </tr>
-              ))}
+              {history.map((record, index) => {
+                const hasActual = record.actual !== null && record.actual !== undefined;
+                return (
+                  <tr key={index}>
+                    <td style={{ fontWeight: 500 }}>{record.date}</td>
+                    <td>{record.meal}</td>
+                    <td>{record.predicted ?? '-'}</td>
+                    <td style={{ fontWeight: 600, color: hasActual ? 'var(--primary-color)' : 'inherit' }}>
+                      {hasActual ? record.actual : '-'}
+                    </td>
+                    <td>
+                      <span className={`badge ${hasActual ? 'badge-success' : 'badge-neutral'}`}>
+                        {hasActual ? 'Verified' : 'Pending'}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

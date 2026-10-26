@@ -6,7 +6,7 @@ export default function Sidebar() {
     { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
     { name: "Today's Meals", path: '/todays-meals', icon: Utensils },
     { name: 'Predictions', path: '/predictions', icon: LineChart },
-    { name: 'Attendance', path: '/attendance', icon: Users },
+    // { name: 'Attendance', path: '/attendance', icon: Users }, // Hidden from frontend navigation
     { name: 'History', path: '/history', icon: Clock },
     { name: 'Profile', path: '/profile', icon: User },
   ];

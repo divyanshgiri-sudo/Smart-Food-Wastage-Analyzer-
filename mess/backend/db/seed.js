@@ -199,7 +199,11 @@ const listMeals = db.prepare('SELECT * FROM meals ORDER BY sort_order');
  * @param {object} helpers  date utilities from store.js, passed in to keep the
  *                          date maths defined in exactly one place
  */
-const seedDemoHistory = db.transaction((helpers, days = 21) => {
+const seedDemoHistory = () => {
+  // Demo history seeding eradicated for live hardware pilot
+};
+
+const _unusedSeedDemoHistory = db.transaction((helpers, days = 21) => {
   const { toDateKey, addDays, atMinutes, minutesNow } = helpers;
   const today = new Date();
   const todayKey = toDateKey(today);
