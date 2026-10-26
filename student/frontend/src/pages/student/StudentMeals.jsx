@@ -86,11 +86,11 @@ export default function StudentMeals() {
       {!loading && !error && meals.length > 0 && (
         <section aria-label={`${activeDay?.label || day}'s meals`}>
           <div className="meal-grid">
-            {meals.map((meal) => (
+            {(meals || []).map((meal) => (
               <MealCard
-                key={`${meal.date}-${meal.id}`}
+                key={meal?.id ? `${meal?.date}-${meal?.id}` : `${meal?.name}-${Math.random()}`}
                 meal={meal}
-                saving={savingKey === `${meal.date}-${meal.id}`}
+                saving={savingKey === `${meal?.date}-${meal?.id}`}
                 onSelect={(intent) => saveIntent(meal, intent)}
               />
             ))}

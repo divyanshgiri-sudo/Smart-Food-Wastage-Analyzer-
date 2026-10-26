@@ -3,7 +3,11 @@
 import { Link } from 'react-router-dom';
 import { initials } from '../../utils/format';
 
-export default function StudentHeader({ title, subtitle, user, unreadCount }) {
+export default function StudentHeader({ title = 'Dashboard', subtitle = '', user, unreadCount = 0 }) {
+  const numericUnread = Number(unreadCount) || 0;
+  const userName = user?.name || 'Student';
+  const userIdentifier = user?.studentId || user?.regNo || 'Student';
+
   return (
     <header className="student-header">
       <div className="header-titles">
@@ -16,21 +20,21 @@ export default function StudentHeader({ title, subtitle, user, unreadCount }) {
           to="/student/notifications"
           className="bell"
           aria-label={
-            unreadCount > 0
-              ? `Notifications, ${unreadCount} unread`
+            numericUnread > 0
+              ? `Notifications, ${numericUnread} unread`
               : 'Notifications, none unread'
           }
         >
           <span aria-hidden="true">🔔</span>
-          {unreadCount > 0 && <span className="bell-dot" aria-hidden="true">{unreadCount}</span>}
+          {numericUnread > 0 && <span className="bell-dot" aria-hidden="true">{numericUnread}</span>}
         </Link>
 
         <div className="header-chip">
-          <span className="avatar" aria-hidden="true">{initials(user?.name)}</span>
+          <span className="avatar" aria-hidden="true">{initials(user?.name || '')}</span>
           <span>
-            <span className="header-chip-name" style={{ display: 'block' }}>{user?.name || 'Student'}</span>
+            <span className="header-chip-name" style={{ display: 'block' }}>{userName}</span>
             <span className="header-chip-role" style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-              {user?.studentId || user?.regNo || 'Student'}
+              {userIdentifier}
             </span>
           </span>
         </div>

@@ -4,7 +4,12 @@ import { NavLink } from 'react-router-dom';
 import { STUDENT_NAV } from './navItems';
 import { initials } from '../../utils/format';
 
-export default function StudentSidebar({ user, unreadCount, onLogout }) {
+export default function StudentSidebar({ user, unreadCount = 0, onLogout }) {
+  const numericUnread = Number(unreadCount) || 0;
+  const userName = user?.name || 'Student';
+  const userIdentifier = user?.studentId || user?.regNo || 'Student';
+  const navItems = Array.isArray(STUDENT_NAV) ? STUDENT_NAV : [];
+
   return (
     <nav className="student-sidebar" aria-label="Student portal">
       <div className="student-brand">
@@ -16,7 +21,7 @@ export default function StudentSidebar({ user, unreadCount, onLogout }) {
       </div>
 
       <ul className="student-nav">
-        {STUDENT_NAV.map((item) => (
+        {navItems.map((item) => (
           <li key={item.to}>
             <NavLink
               to={item.to}
@@ -24,9 +29,9 @@ export default function StudentSidebar({ user, unreadCount, onLogout }) {
             >
               <span className="nav-icon" aria-hidden="true">{item.icon}</span>
               {item.label}
-              {item.to === '/student/notifications' && unreadCount > 0 && (
+              {item.to === '/student/notifications' && numericUnread > 0 && (
                 <span className="nav-count">
-                  {unreadCount}
+                  {numericUnread}
                   <span className="sr-only"> unread notifications</span>
                 </span>
               )}
@@ -37,10 +42,10 @@ export default function StudentSidebar({ user, unreadCount, onLogout }) {
 
       <div className="sidebar-foot">
         <div className="sidebar-user">
-          <span className="avatar" aria-hidden="true">{initials(user?.name)}</span>
+          <span className="avatar" aria-hidden="true">{initials(user?.name || '')}</span>
           <span className="sidebar-user-text">
-            <span className="sidebar-user-name">{user?.name || 'Student'}</span>
-            <span className="sidebar-user-role">{user?.studentId || user?.regNo || 'Student'}</span>
+            <span className="sidebar-user-name">{userName}</span>
+            <span className="sidebar-user-role">{userIdentifier}</span>
           </span>
         </div>
         <button type="button" className="logout-btn" onClick={onLogout}>

@@ -33,16 +33,15 @@ export default function StudentProfile() {
   const navigate = useNavigate();
 
   async function togglePreference(key, value) {
-    // Optimistic: a switch that lags behind the finger feels broken.
-    const previous = data.preferences;
+    const previous = data?.preferences || {};
     setData({ ...data, preferences: { ...previous, [key]: value } });
 
     try {
       const response = await studentApi.updatePreferences({ [key]: value });
-      setData((current) => ({ ...current, preferences: response.preferences }));
+      setData((current) => ({ ...current, preferences: response?.preferences || {} }));
     } catch (err) {
       setData((current) => ({ ...current, preferences: previous }));
-      notify({ variant: 'error', title: 'Could not save that setting', text: err.message });
+      notify({ variant: 'error', title: 'Could not save that setting', text: err?.message || 'Error updating preference' });
     }
   }
 
@@ -64,36 +63,41 @@ export default function StudentProfile() {
       <div className="card">
         <ErrorState
           title="Unable to load your profile"
-          message={error.message}
+          message={error?.message || 'Please check your connection and try again.'}
           onRetry={reload}
         />
       </div>
     );
   }
 
-  const { profile, summary, preferences } = data;
+  const profile = data?.profile || {};
+  const summary = data?.summary || {};
+  const preferences = data?.preferences || {};
 
   const details = [
-    { label: 'Full name', value: profile.name },
-    { label: 'Student ID', value: profile.studentId },
-    { label: 'Email', value: profile.email },
-    { label: 'Hostel', value: profile.hostel },
+    { label: 'Full name', value: profile.name || 'Student' },
+    { label: 'Student ID', value: profile.studentId || profile.regNo || '—' },
+    { label: 'Email', value: profile.email || '—' },
+    { label: 'Hostel', value: profile.hostel || '—' },
     { label: 'Room', value: profile.room || 'Not on record' },
-    { label: 'Programme', value: profile.program },
-    { label: 'Year', value: profile.year },
-    { label: 'Mess plan', value: profile.messPlan },
+    { label: 'Programme', value: profile.program || '—' },
+    { label: 'Year', value: profile.year || '—' },
+    { label: 'Mess plan', value: profile.messPlan || 'Standard' },
     { label: 'Account role', value: 'Student' },
     { label: 'Member since', value: profile.joinedOn ? formatFullDate(profile.joinedOn) : '—' },
   ];
 
+  const attendanceRate = Math.round(Number(summary.attendanceRate ?? 0));
+
   return (
     <>
       <section className="profile-hero">
-        <span className="avatar" aria-hidden="true">{initials(profile.name)}</span>
+        <span className="avatar" aria-hidden="true">{initials(profile.name || '')}</span>
         <div>
-          <p className="profile-hero-name">{profile.name}</p>
+          <p className="profile-hero-name">{profile.name || 'Student'}</p>
           <p className="profile-hero-meta">
-            {profile.studentId} · {profile.hostel}
+            {profile.studentId || profile.regNo || 'Student'}
+            {profile.hostel ? ` · ${profile.hostel}` : ''}
             {profile.room ? ` · Room ${profile.room}` : ''}
           </p>
         </div>
@@ -110,7 +114,7 @@ export default function StudentProfile() {
             </div>
             <div className="card-body">
               <div className="detail-list">
-                {details.map((row) => (
+                {(details || []).map((row) => (
                   <div className="detail-row" key={row.label}>
                     <span className="detail-label">{row.label}</span>
                     <span className="detail-value">{row.value}</span>
@@ -136,7 +140,7 @@ export default function StudentProfile() {
               </div>
             </div>
             <div className="card-body">
-              {PREFERENCES.map((pref) => {
+              {(PREFERENCES || []).map((pref) => {
                 const dependent = pref.key !== 'notificationsEnabled';
                 const disabled = dependent && !preferences.notificationsEnabled;
 
@@ -183,17 +187,17 @@ export default function StudentProfile() {
             </div>
             <div className="card-body">
               <div className="stat-grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
-                <StatCard label="Planned" value={summary.mealsPlanned} icon="🍽️" />
-                <StatCard label="Attended" value={summary.mealsAttended} icon="✓" accent="green" />
-                <StatCard label="Skipped" value={summary.mealsSkipped} icon="✕" />
-                <StatCard label="No response" value={summary.noResponse} icon="?" accent="amber" />
+                <StatCard label="Planned" value={Number(summary.mealsPlanned ?? 0)} icon="🍽️" />
+                <StatCard label="Attended" value={Number(summary.mealsAttended ?? 0)} icon="✓" accent="green" />
+                <StatCard label="Skipped" value={Number(summary.mealsSkipped ?? 0)} icon="✕" />
+                <StatCard label="No response" value={Number(summary.noResponse ?? 0)} icon="?" accent="amber" />
               </div>
 
               <div style={{ marginTop: 16 }}>
                 <p className="stat-label">Attendance rate</p>
-                <p className="stat-value">{summary.attendanceRate}%</p>
+                <p className="stat-value">{attendanceRate}%</p>
                 <div className="meter">
-                  <div className="meter-fill" style={{ width: `${summary.attendanceRate}%` }} />
+                  <div className="meter-fill" style={{ width: `${Math.min(100, Math.max(0, attendanceRate))}%` }} />
                 </div>
                 <p className="stat-hint">Share of the meals you planned that were recorded.</p>
               </div>

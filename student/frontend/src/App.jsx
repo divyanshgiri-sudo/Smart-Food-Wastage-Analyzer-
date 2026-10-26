@@ -10,6 +10,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { ToastProvider } from './context/ToastContext';
 import ProtectedRoute from './components/ProtectedRoute';
+import ErrorBoundary from './components/common/ErrorBoundary';
 
 import Login from './pages/Login';
 import Signup from './pages/Signup';
@@ -31,29 +32,31 @@ function RootRedirect() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <ToastProvider>
-        <Routes>
-          <Route path="/" element={<RootRedirect />} />
+    <ErrorBoundary>
+      <AuthProvider>
+        <ToastProvider>
+          <Routes>
+            <Route path="/" element={<RootRedirect />} />
 
-          <Route path="/login" element={<Login />} />
-          <Route path="/signup" element={<Signup />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/signup" element={<Signup />} />
 
-          {/* ---------------- Student portal ---------------- */}
-          <Route element={<ProtectedRoute role="student" loginPath="/login" />}>
-            <Route path="/student" element={<StudentLayout />}>
-              <Route index element={<Navigate to="/student/dashboard" replace />} />
-              <Route path="dashboard" element={<StudentDashboard />} />
-              <Route path="meals" element={<StudentMeals />} />
-              <Route path="history" element={<StudentHistory />} />
-              <Route path="notifications" element={<StudentNotifications />} />
-              <Route path="profile" element={<StudentProfile />} />
+            {/* ---------------- Student portal ---------------- */}
+            <Route element={<ProtectedRoute role="student" loginPath="/login" />}>
+              <Route path="/student" element={<StudentLayout />}>
+                <Route index element={<Navigate to="/student/dashboard" replace />} />
+                <Route path="dashboard" element={<StudentDashboard />} />
+                <Route path="meals" element={<StudentMeals />} />
+                <Route path="history" element={<StudentHistory />} />
+                <Route path="notifications" element={<StudentNotifications />} />
+                <Route path="profile" element={<StudentProfile />} />
+              </Route>
             </Route>
-          </Route>
 
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </ToastProvider>
-    </AuthProvider>
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </ToastProvider>
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }

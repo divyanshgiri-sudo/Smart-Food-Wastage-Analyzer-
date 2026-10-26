@@ -31,7 +31,7 @@ export default function StudentDashboard() {
   const openToday = Array.isArray(todayMeals) ? todayMeals.filter((meal) => Boolean(meal?.intentOpen)) : [];
   const nextCutoff = openToday.length > 0 ? openToday[0] : null;
 
-  const firstName = user?.name?.split(' ')[0] || 'there';
+  const firstName = typeof user?.name === 'string' && user.name.trim() ? user.name.trim().split(/\s+/)[0] : 'there';
 
   return (
     <>
@@ -101,15 +101,15 @@ export default function StudentDashboard() {
           )}
 
           {!loading && !error &&
-            todayMeals.map((meal) => (
-              <div className="summary-row" key={meal.id || meal.name}>
+            (todayMeals || []).map((meal) => (
+              <div className="summary-row" key={meal?.id || meal?.name || Math.random()}>
                 <div className="summary-meal">
-                  <span className="summary-name">{meal.name}</span>
-                  <span className="summary-time">{meal.time}</span>
+                  <span className="summary-name">{meal?.name || 'Meal'}</span>
+                  <span className="summary-time">{meal?.time || ''}</span>
                 </div>
                 <div className="summary-badges">
-                  <IntentBadge intent={meal.studentIntent || 'none'} />
-                  <AttendanceBadge status={meal.attendanceStatus || 'none'} source={meal.attendanceSource} />
+                  <IntentBadge intent={meal?.studentIntent || 'none'} />
+                  <AttendanceBadge status={meal?.attendanceStatus || 'none'} source={meal?.attendanceSource} />
                 </div>
               </div>
             ))}
@@ -151,11 +151,11 @@ export default function StudentDashboard() {
 
         {!loading && !error && todayMeals.length > 0 && (
           <div className="meal-grid">
-            {todayMeals.map((meal) => (
+            {(todayMeals || []).map((meal) => (
               <MealCard
-                key={meal.id || `${meal.date}-${meal.name}`}
+                key={meal?.id || `${meal?.date}-${meal?.name}`}
                 meal={meal}
-                saving={savingKey === `${meal.date}-${meal.id}`}
+                saving={savingKey === `${meal?.date}-${meal?.id}`}
                 onSelect={(intent) => saveIntent(meal, intent)}
               />
             ))}
@@ -180,11 +180,11 @@ export default function StudentDashboard() {
           </div>
 
           <div className="meal-grid">
-            {tomorrowMeals.map((meal) => (
+            {(tomorrowMeals || []).map((meal) => (
               <MealCard
-                key={meal.id || `${meal.date}-${meal.name}`}
+                key={meal?.id || `${meal?.date}-${meal?.name}`}
                 meal={meal}
-                saving={savingKey === `${meal.date}-${meal.id}`}
+                saving={savingKey === `${meal?.date}-${meal?.id}`}
                 onSelect={(intent) => saveIntent(meal, intent)}
               />
             ))}

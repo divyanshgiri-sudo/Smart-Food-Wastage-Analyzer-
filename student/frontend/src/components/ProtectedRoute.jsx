@@ -27,8 +27,9 @@ export default function ProtectedRoute({ role, loginPath = '/login' }) {
     return <Navigate to={loginPath} replace state={{ from: location.pathname }} />;
   }
 
-  if (role && userRole !== role) {
-    return <Navigate to="/student/dashboard" replace />;
+  const roleMatches = !role || (userRole && String(userRole).trim().toLowerCase() === String(role).trim().toLowerCase());
+  if (!roleMatches) {
+    return <Navigate to={loginPath} replace />;
   }
 
   return <Outlet />;

@@ -15,19 +15,27 @@ import { useEffect, useState } from 'react';
 
 export default function MealIntentSelector({ meal, onSelect, saving }) {
   const [editing, setEditing] = useState(false);
-  const hasResponded = meal.studentIntent !== 'none';
+
+  if (!meal) return null;
+
+  const studentIntent = meal.studentIntent || 'none';
+  const hasResponded = studentIntent !== 'none';
+  const mealName = meal.name || 'Meal';
+  const cutoffLabel = meal.cutoffLabel || '';
 
   // Collapse the editor again whenever a new answer arrives from the server.
   useEffect(() => {
     setEditing(false);
-  }, [meal.studentIntent]);
+  }, [studentIntent]);
 
   async function choose(intent) {
-    if (intent === meal.studentIntent) {
+    if (intent === studentIntent) {
       setEditing(false);
       return;
     }
-    await onSelect(intent);
+    if (typeof onSelect === 'function') {
+      await onSelect(intent);
+    }
   }
 
   if (!meal.intentOpen) {
@@ -36,8 +44,8 @@ export default function MealIntentSelector({ meal, onSelect, saving }) {
         <span aria-hidden="true">🔒</span>
         <span>
           {hasResponded
-            ? `Responses closed at ${meal.cutoffLabel}. Your answer was recorded.`
-            : `Responses closed at ${meal.cutoffLabel}. You did not respond to this meal.`}
+            ? `Responses closed at ${cutoffLabel}. Your answer was recorded.`
+            : `Responses closed at ${cutoffLabel}. You did not respond to this meal.`}
         </span>
       </div>
     );
@@ -51,12 +59,12 @@ export default function MealIntentSelector({ meal, onSelect, saving }) {
         <div
           className="intent-group"
           role="group"
-          aria-label={`Will you attend ${meal.name}?`}
+          aria-label={`Will you attend ${mealName}?`}
         >
           <button
             type="button"
             className="intent-btn intent-yes"
-            aria-pressed={meal.studentIntent === 'attending'}
+            aria-pressed={studentIntent === 'attending'}
             disabled={saving}
             onClick={() => choose('attending')}
           >
@@ -66,7 +74,7 @@ export default function MealIntentSelector({ meal, onSelect, saving }) {
           <button
             type="button"
             className="intent-btn intent-no"
-            aria-pressed={meal.studentIntent === 'not_attending'}
+            aria-pressed={studentIntent === 'not_attending'}
             disabled={saving}
             onClick={() => choose('not_attending')}
           >
@@ -91,17 +99,17 @@ export default function MealIntentSelector({ meal, onSelect, saving }) {
     );
   }
 
-  const attending = meal.studentIntent === 'attending';
+  const attending = studentIntent === 'attending';
 
   return (
     <div>
       <div className={`intent-confirmed ${attending ? 'is-attending' : 'is-skipping'}`}>
-        <span className="confirm-icon" aria-hidden="true">{attending ? '✓' : '✓'}</span>
+        <span className="confirm-icon" aria-hidden="true">✓</span>
         <div>
           <p className="confirm-title">
             {attending
-              ? `You're marked for ${meal.name.toLowerCase()}`
-              : `${meal.name} marked as not attending`}
+              ? `You're marked for ${mealName.toLowerCase()}`
+              : `${mealName} marked as not attending`}
           </p>
           <p className="confirm-text">
             {attending
@@ -120,10 +128,12 @@ export default function MealIntentSelector({ meal, onSelect, saving }) {
         >
           Change response
         </button>
-        <span className="cutoff-note">
-          <span aria-hidden="true">🕒</span>
-          You can change this until {meal.cutoffLabel}
-        </span>
+        {cutoffLabel && (
+          <span className="cutoff-note">
+            <span aria-hidden="true">🕒</span>
+            You can change this until {cutoffLabel}
+          </span>
+        )}
       </div>
     </div>
   );

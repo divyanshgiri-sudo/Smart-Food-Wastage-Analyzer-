@@ -35,9 +35,12 @@ export default function StudentHistory() {
   const [days, setDays] = useState(14);
   const { data, loading, error, reload } = useApi(() => studentApi.history(days), [days]);
 
-  const records = data?.records ?? [];
-  const summary = data?.summary;
-  const trend = (data?.trend ?? []).map((point) => ({ ...point, label: formatDate(point.date) }));
+  const records = Array.isArray(data?.records) ? data.records : [];
+  const summary = data?.summary || {};
+  const trend = (Array.isArray(data?.trend) ? data.trend : []).map((point) => ({
+    ...point,
+    label: formatDate(point?.date),
+  }));
 
   return (
     <>
@@ -67,7 +70,7 @@ export default function StudentHistory() {
         <div className="card">
           <ErrorState
             title="Unable to load your history"
-            message={error.message}
+            message={error?.message || 'Could not load your meal history.'}
             onRetry={reload}
           />
         </div>
@@ -86,15 +89,31 @@ export default function StudentHistory() {
       {!loading && !error && records.length > 0 && (
         <>
           <div className="stat-grid">
-            <StatCard icon="🍽️" label="Meals planned" value={summary.mealsPlanned} hint="You said you'd attend" />
-            <StatCard icon="✓" label="Meals attended" value={summary.mealsAttended} hint="Recorded at the mess" accent="green" />
-            <StatCard icon="✕" label="Meals skipped" value={summary.mealsSkipped} hint="Told the mess in advance" />
+            <StatCard
+              icon="🍽️"
+              label="Meals planned"
+              value={Number(summary.mealsPlanned ?? 0)}
+              hint="You said you'd attend"
+            />
+            <StatCard
+              icon="✓"
+              label="Meals attended"
+              value={Number(summary.mealsAttended ?? 0)}
+              hint="Recorded at the mess"
+              accent="green"
+            />
+            <StatCard
+              icon="✕"
+              label="Meals skipped"
+              value={Number(summary.mealsSkipped ?? 0)}
+              hint="Told the mess in advance"
+            />
             <StatCard
               icon="📈"
               label="Attendance rate"
-              value={`${summary.attendanceRate}%`}
+              value={`${Math.round(Number(summary.attendanceRate ?? 0))}%`}
               hint="Of the meals you planned"
-              meter={summary.attendanceRate}
+              meter={Math.round(Number(summary.attendanceRate ?? 0))}
             />
           </div>
 
@@ -183,7 +202,7 @@ export default function StudentHistory() {
                   </thead>
                   <tbody>
                     {records.map((record) => (
-                      <tr key={record.id}>
+                      <tr key={record.id || `${record.date}-${record.meal}`}>
                         <td className="date-cell">{formatDate(record.date)}</td>
                         <td>{record.meal}</td>
                         <td><IntentBadge intent={record.intent} /></td>
@@ -203,7 +222,7 @@ export default function StudentHistory() {
 
             <div className="history-cards">
               {records.map((record) => (
-                <article className="history-card" key={record.id}>
+                <article className="history-card" key={record.id || `${record.date}-${record.meal}`}>
                   <div className="history-card-top">
                     <span className="history-card-meal">{record.meal}</span>
                     <span className="history-card-date">{formatDate(record.date)}</span>

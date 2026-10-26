@@ -11,6 +11,8 @@ const TYPE_META = {
 };
 
 export default function NotificationCard({ notification, onMarkRead }) {
+  if (!notification) return null;
+
   const meta = TYPE_META[notification.type] || TYPE_META.reminder;
   const unread = !notification.read;
 
@@ -18,17 +20,21 @@ export default function NotificationCard({ notification, onMarkRead }) {
     <button
       type="button"
       className={`notif-card${unread ? ' is-unread' : ''}`}
-      onClick={() => onMarkRead(notification.id, !notification.read)}
-      aria-label={`${meta.label}: ${notification.title}. ${unread ? 'Unread' : 'Read'}. Select to mark as ${unread ? 'read' : 'unread'}.`}
+      onClick={() => {
+        if (typeof onMarkRead === 'function') {
+          onMarkRead(notification.id, !notification.read);
+        }
+      }}
+      aria-label={`${meta.label}: ${notification.title || 'Notification'}. ${unread ? 'Unread' : 'Read'}. Select to mark as ${unread ? 'read' : 'unread'}.`}
     >
       <span className="notif-icon" aria-hidden="true">{meta.icon}</span>
 
       <span className="notif-body">
         <span className="notif-top">
-          <span className="notif-title">{notification.title}</span>
+          <span className="notif-title">{notification.title || ''}</span>
           <span className="notif-time">{relativeTime(notification.createdAt)}</span>
         </span>
-        <span className="notif-text">{notification.body}</span>
+        <span className="notif-text">{notification.body || ''}</span>
         <span className="notif-tags">
           <span className={`badge ${meta.badge}`}>{meta.label}</span>
           {unread && (

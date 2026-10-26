@@ -21,15 +21,17 @@ const FILTERS = [
 
 export default function StudentNotifications() {
   const { data, loading, error, reload, setData } = useApi(() => studentApi.notifications(), []);
-  const { setUnreadCount } = useOutletContext();
+  const outlet = useOutletContext() || {};
+  const setUnreadCount = typeof outlet.setUnreadCount === 'function' ? outlet.setUnreadCount : () => {};
   const { notify } = useToast();
   const [filter, setFilter] = useState('all');
   const [busy, setBusy] = useState(false);
 
-  const notifications = data?.notifications ?? [];
-  const unreadCount = data?.unreadCount ?? 0;
+  const notifications = Array.isArray(data?.notifications) ? data.notifications : [];
+  const unreadCount = Number(data?.unreadCount) || 0;
 
   const visible = notifications.filter((n) => {
+    if (!n) return false;
     if (filter === 'all') return true;
     if (filter === 'unread') return !n.read;
     return n.type === filter;
@@ -40,9 +42,11 @@ export default function StudentNotifications() {
     try {
       const response = await studentApi.markNotification(id, read);
       setData(response);
-      setUnreadCount(response.unreadCount);
+      if (response && response.unreadCount !== undefined) {
+        setUnreadCount(Number(response.unreadCount) || 0);
+      }
     } catch (err) {
-      notify({ variant: 'error', title: 'Could not update that notification', text: err.message });
+      notify({ variant: 'error', title: 'Could not update that notification', text: err?.message || 'Error updating notification' });
     } finally {
       setBusy(false);
     }
@@ -52,7 +56,7 @@ export default function StudentNotifications() {
     <>
       <div className="history-toolbar">
         <div className="notif-filters" role="group" aria-label="Filter notifications">
-          {FILTERS.map((option) => (
+          {(FILTERS || []).map((option) => (
             <button
               key={option.key}
               type="button"
@@ -86,7 +90,7 @@ export default function StudentNotifications() {
         <div className="card">
           <ErrorState
             title="Unable to load notifications"
-            message={error.message}
+            message={error?.message || 'Could not load notifications.'}
             onRetry={reload}
           />
         </div>
@@ -117,7 +121,7 @@ export default function StudentNotifications() {
         <div className="notif-list">
           {visible.map((notification) => (
             <NotificationCard
-              key={notification.id}
+              key={notification.id || Math.random()}
               notification={notification}
               onMarkRead={markRead}
             />

@@ -33,7 +33,8 @@ export default function StudentLayout() {
     refreshUnread();
   }, [refreshUnread]);
 
-  const current = STUDENT_NAV.find((item) => pathname.startsWith(item.to)) || STUDENT_NAV[0];
+  const navList = Array.isArray(STUDENT_NAV) ? STUDENT_NAV : [];
+  const current = navList.find((item) => item?.to && pathname.startsWith(item.to)) || navList[0] || {};
 
   async function handleLogout() {
     await logout();

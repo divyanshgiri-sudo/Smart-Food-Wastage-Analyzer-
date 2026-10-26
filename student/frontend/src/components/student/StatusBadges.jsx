@@ -27,18 +27,23 @@ const MEAL_STATUS_MAP = {
   completed: { className: 'badge-neutral', icon: '✓', label: 'Finished' },
 };
 
-function Badge({ config, srPrefix }) {
+function Badge({ config = {}, srPrefix = '' }) {
+  const className = config.className || 'badge-neutral';
+  const icon = config.icon || '—';
+  const label = config.label || '';
+
   return (
-    <span className={`badge ${config.className}`}>
-      <span className="badge-icon" aria-hidden="true">{config.icon}</span>
-      <span className="sr-only">{srPrefix}: </span>
-      {config.label}
+    <span className={`badge ${className}`}>
+      <span className="badge-icon" aria-hidden="true">{icon}</span>
+      {srPrefix && <span className="sr-only">{srPrefix}: </span>}
+      {label}
     </span>
   );
 }
 
 export function IntentBadge({ intent }) {
-  return <Badge config={INTENT_MAP[intent] || INTENT_MAP.none} srPrefix="Your response" />;
+  const config = INTENT_MAP[intent] || INTENT_MAP.none;
+  return <Badge config={config} srPrefix="Your response" />;
 }
 
 /**
@@ -50,7 +55,7 @@ export function IntentBadge({ intent }) {
 export function AttendanceBadge({ status, source, past = false }) {
   const config = ATTENDANCE_MAP[status] || ATTENDANCE_MAP.none;
 
-  let { label } = config;
+  let label = config.label;
   if (status === 'verified' && source === 'fingerprint') label = 'Verified by fingerprint';
   // "Not yet recorded" only makes sense while the meal can still be attended.
   else if (status === 'not_verified' && past) label = 'Not recorded';
@@ -59,7 +64,8 @@ export function AttendanceBadge({ status, source, past = false }) {
 }
 
 export function MealStatusBadge({ status }) {
-  return <Badge config={MEAL_STATUS_MAP[status] || MEAL_STATUS_MAP.upcoming} srPrefix="Meal status" />;
+  const config = MEAL_STATUS_MAP[status] || MEAL_STATUS_MAP.upcoming;
+  return <Badge config={config} srPrefix="Meal status" />;
 }
 
 export { INTENT_MAP, ATTENDANCE_MAP, MEAL_STATUS_MAP };
