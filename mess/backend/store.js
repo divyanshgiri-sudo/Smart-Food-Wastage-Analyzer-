@@ -65,9 +65,40 @@ function minutesNow(now = new Date(), timeZone = TIMEZONE) {
   }
 }
 
-function atMinutes(dateKey, mins) {
-  const [y, m, d] = dateKey.split('-').map(Number);
-  return new Date(y, m - 1, d, Math.floor(mins / 60), mins % 60, 0, 0);
+function atMinutes(dateKey, mins, timeZone = TIMEZONE) {
+  const safeMins = Number(mins) || 0;
+  const hours = Math.floor(safeMins / 60);
+  const minutes = safeMins % 60;
+  const hh = String(hours).padStart(2, '0');
+  const mm = String(minutes).padStart(2, '0');
+
+  // Asia/Kolkata is permanently UTC+05:30 with no Daylight Saving Time
+  if (timeZone === 'Asia/Kolkata' || !timeZone) {
+    const d = new Date(`${dateKey}T${hh}:${mm}:00.000+05:30`);
+    if (!isNaN(d.getTime())) return d;
+  }
+
+  try {
+    const naiveUtc = new Date(`${dateKey}T${hh}:${mm}:00.000Z`);
+    const tzParts = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      year: 'numeric', month: 'numeric', day: 'numeric',
+      hour: 'numeric', minute: 'numeric', second: 'numeric',
+      hourCycle: 'h23',
+    }).formatToParts(naiveUtc);
+
+    const tzYear = parseInt(tzParts.find((p) => p.type === 'year').value, 10);
+    const tzMonth = parseInt(tzParts.find((p) => p.type === 'month').value, 10);
+    const tzDay = parseInt(tzParts.find((p) => p.type === 'day').value, 10);
+    const tzHour = parseInt(tzParts.find((p) => p.type === 'hour').value, 10);
+    const tzMin = parseInt(tzParts.find((p) => p.type === 'minute').value, 10);
+
+    const asUtcTime = Date.UTC(tzYear, tzMonth - 1, tzDay, tzHour, tzMin, 0);
+    const offsetMs = asUtcTime - naiveUtc.getTime();
+    return new Date(naiveUtc.getTime() - offsetMs);
+  } catch {
+    return new Date(`${dateKey}T${hh}:${mm}:00.000+05:30`);
+  }
 }
 
 /* ------------------------------------------------------------------ *

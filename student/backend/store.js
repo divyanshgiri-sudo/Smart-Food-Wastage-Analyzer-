@@ -18,40 +18,101 @@ const { db, dbPath } = require('./db');
 const { seedReferenceData, seedDemoHistory } = require('./db/seed');
 
 const MINUTE = 60 * 1000;
+const TIMEZONE = process.env.TIMEZONE || 'Asia/Kolkata';
 
 /* ------------------------------------------------------------------ *
- * Date helpers
+ * Date helpers (enforcing Asia/Kolkata IST)
  * ------------------------------------------------------------------ */
 
-function toDateKey(date) {
+function toDateKey(date, timeZone = TIMEZONE) {
   if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
     return date;
   }
   const d = date instanceof Date ? date : new Date(date || Date.now());
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+  try {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(d);
+  } catch {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
 }
 
-function getTodayDateKey() {
-  return toDateKey(new Date());
+function getTodayDateKey(timeZone = TIMEZONE) {
+  return toDateKey(new Date(), timeZone);
 }
 
 function addDays(date, days) {
+  if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    const [y, m, d] = date.split('-').map(Number);
+    const next = new Date(Date.UTC(y, m - 1, d + days));
+    return toDateKey(next);
+  }
   const next = new Date(date);
   next.setDate(next.getDate() + days);
   return next;
 }
 
-function minutesNow(now = new Date()) {
-  return now.getHours() * 60 + now.getMinutes();
+function minutesNow(now = new Date(), timeZone = TIMEZONE) {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      hour: 'numeric',
+      minute: 'numeric',
+      hourCycle: 'h23',
+    }).formatToParts(now);
+    const hour = parseInt(parts.find((p) => p.type === 'hour').value, 10);
+    const minute = parseInt(parts.find((p) => p.type === 'minute').value, 10);
+    return hour * 60 + minute;
+  } catch {
+    return now.getHours() * 60 + now.getMinutes();
+  }
 }
 
-function atMinutes(dateKey, mins) {
+/**
+ * Constructs an exact Date object for a given dateKey (YYYY-MM-DD) and minute offset
+ * strictly anchored in Asia/Kolkata (IST: UTC+05:30), irrespective of host container timezone.
+ */
+function atMinutes(dateKey, mins, timeZone = TIMEZONE) {
   const safeMins = Number(mins) || 0;
-  const [y, m, d] = String(dateKey).split('-').map(Number);
-  return new Date(y, m - 1, d, Math.floor(safeMins / 60), safeMins % 60, 0, 0);
+  const hours = Math.floor(safeMins / 60);
+  const minutes = safeMins % 60;
+  const hh = String(hours).padStart(2, '0');
+  const mm = String(minutes).padStart(2, '0');
+
+  // Asia/Kolkata is permanently UTC+05:30 with no Daylight Saving Time
+  if (timeZone === 'Asia/Kolkata' || !timeZone) {
+    const d = new Date(`${dateKey}T${hh}:${mm}:00.000+05:30`);
+    if (!isNaN(d.getTime())) return d;
+  }
+
+  try {
+    const naiveUtc = new Date(`${dateKey}T${hh}:${mm}:00.000Z`);
+    const tzParts = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      year: 'numeric', month: 'numeric', day: 'numeric',
+      hour: 'numeric', minute: 'numeric', second: 'numeric',
+      hourCycle: 'h23',
+    }).formatToParts(naiveUtc);
+
+    const tzYear = parseInt(tzParts.find((p) => p.type === 'year').value, 10);
+    const tzMonth = parseInt(tzParts.find((p) => p.type === 'month').value, 10);
+    const tzDay = parseInt(tzParts.find((p) => p.type === 'day').value, 10);
+    const tzHour = parseInt(tzParts.find((p) => p.type === 'hour').value, 10);
+    const tzMin = parseInt(tzParts.find((p) => p.type === 'minute').value, 10);
+
+    const asUtcTime = Date.UTC(tzYear, tzMonth - 1, tzDay, tzHour, tzMin, 0);
+    const offsetMs = asUtcTime - naiveUtc.getTime();
+    return new Date(naiveUtc.getTime() - offsetMs);
+  } catch {
+    return new Date(`${dateKey}T${hh}:${mm}:00.000+05:30`);
+  }
 }
 
 /* ------------------------------------------------------------------ *
@@ -759,8 +820,12 @@ module.exports = {
   userForSession,
 
   // date helpers
+  TIMEZONE,
   toDateKey,
+  getTodayDateKey,
   addDays,
+  atMinutes,
+  minutesNow,
 
   // student data
   getMealDefinitions,

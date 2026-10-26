@@ -326,19 +326,19 @@ const studentOnly = [requireAuth, requireRole('student')];
  * their own intent and their own attendance status.
  */
 router.get('/student/meals', ...studentOnly, (req, res) => {
-  const today = new Date();
-  const tomorrow = data.addDays(today, 1);
+  const todayKey = data.getTodayDateKey ? data.getTodayDateKey() : data.toDateKey(new Date());
+  const tomorrowKey = data.toDateKey(data.addDays(todayKey, 1));
 
   res.json({
     today: {
-      date: data.toDateKey(today),
+      date: todayKey,
       label: 'Today',
-      meals: data.getMealsForDate(req.user.id, today),
+      meals: data.getMealsForDate(req.user.id, todayKey),
     },
     tomorrow: {
-      date: data.toDateKey(tomorrow),
+      date: tomorrowKey,
       label: 'Tomorrow',
-      meals: data.getMealsForDate(req.user.id, tomorrow),
+      meals: data.getMealsForDate(req.user.id, tomorrowKey),
     },
     // Honest about what is and is not wired up yet.
     demoMode: true,
@@ -363,7 +363,7 @@ router.post('/student/meals/:mealId/intent', ...studentOnly, (req, res) => {
     });
   }
 
-  const dateKey = date || data.toDateKey(new Date());
+  const dateKey = date || (data.getTodayDateKey ? data.getTodayDateKey() : data.toDateKey(new Date()));
   const result = data.setMealIntent(req.user.id, dateKey, mealId, intent);
 
   if (result.error === 'unknown_meal') {
@@ -421,21 +421,21 @@ router.post('/student/meals/:mealId/intent', ...studentOnly, (req, res) => {
  * student attendance overview, and unread notification counts.
  */
 router.get('/student/dashboard', ...studentOnly, (req, res) => {
-  const today = new Date();
-  const tomorrow = data.addDays(today, 1);
+  const todayKey = data.getTodayDateKey ? data.getTodayDateKey() : data.toDateKey(new Date());
+  const tomorrowKey = data.toDateKey(data.addDays(todayKey, 1));
   const overview = data.getStudentAttendanceOverview(req.user.id, 14);
   const notifications = data.getNotifications(req.user.id);
 
   res.json({
     today: {
-      date: data.toDateKey(today),
+      date: todayKey,
       label: 'Today',
-      meals: data.getMealsForDate(req.user.id, today),
+      meals: data.getMealsForDate(req.user.id, todayKey),
     },
     tomorrow: {
-      date: data.toDateKey(tomorrow),
+      date: tomorrowKey,
       label: 'Tomorrow',
-      meals: data.getMealsForDate(req.user.id, tomorrow),
+      meals: data.getMealsForDate(req.user.id, tomorrowKey),
     },
     overview,
     summary: overview.summary,
