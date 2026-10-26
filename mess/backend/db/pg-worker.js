@@ -44,7 +44,16 @@ port.on('message', async (msg) => {
     const client = await getClient();
     if (msg.type === 'query') {
       const res = await client.query(msg.sql, msg.params);
-      port.postMessage({ id: msg.id, ok: true, rows: res.rows || [], rowCount: res.rowCount || 0 });
+      const rows = (res.rows || []).map((row) => {
+        if (row && typeof row === 'object') {
+          if (typeof row.count === 'string') {
+            const num = Number(row.count);
+            if (!isNaN(num)) row.count = num;
+          }
+        }
+        return row;
+      });
+      port.postMessage({ id: msg.id, ok: true, rows, rowCount: res.rowCount || 0 });
     } else if (msg.type === 'exec') {
       await client.query(msg.sql);
       port.postMessage({ id: msg.id, ok: true });

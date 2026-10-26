@@ -156,6 +156,7 @@ export const authApi = {
 /* ---------------- Student portal ---------------- */
 
 export const studentApi = {
+  dashboard: () => request('/student/dashboard'),
   meals: () => request('/student/meals'),
   setIntent: (mealId, intent, date) =>
     request(`/student/meals/${mealId}/intent`, { method: 'POST', body: { intent, date } }),

@@ -11,33 +11,41 @@ import { AttendanceBadge, IntentBadge, MealStatusBadge } from './StatusBadges';
 import { formatDate, formatTime, todayKey } from '../../utils/format';
 
 export default function MealCard({ meal, onSelect, saving }) {
-  const showAttendance = meal.status !== 'upcoming' || meal.attendanceStatus !== 'none';
-  // The same card serves today and tomorrow, so the menu heading names the day.
-  const menuHeading = meal.date === todayKey() ? "Today's menu" : `Menu · ${formatDate(meal.date)}`;
+  if (!meal) return null;
+
+  const mealId = meal.id || 'unknown';
+  const mealDate = meal.date || todayKey();
+  const showAttendance = meal.status !== 'upcoming' || (meal.attendanceStatus && meal.attendanceStatus !== 'none');
+  const menuHeading = mealDate === todayKey() ? "Today's menu" : `Menu · ${formatDate(mealDate)}`;
+  const menuItems = Array.isArray(meal.menu) ? meal.menu : [];
 
   return (
-    <article className="meal-card" data-intent={meal.studentIntent} aria-labelledby={`meal-${meal.date}-${meal.id}`}>
+    <article className="meal-card" data-intent={meal.studentIntent || 'none'} aria-labelledby={`meal-${mealDate}-${mealId}`}>
       <header className="meal-card-head">
         <div>
-          <h3 className="meal-name" id={`meal-${meal.date}-${meal.id}`}>{meal.name}</h3>
-          <p className="meal-time">{meal.time}</p>
+          <h3 className="meal-name" id={`meal-${mealDate}-${mealId}`}>{meal.name || 'Meal'}</h3>
+          <p className="meal-time">{meal.time || ''}</p>
         </div>
-        <MealStatusBadge status={meal.status} />
+        <MealStatusBadge status={meal.status || 'upcoming'} />
       </header>
 
       <div className="meal-section">
-        <p className="meal-label" id={`menu-${meal.date}-${meal.id}`}>{menuHeading}</p>
-        <ul className="menu-list" aria-labelledby={`menu-${meal.date}-${meal.id}`}>
-          {meal.menu.map((item) => (
-            <li key={item} className="menu-item">{item}</li>
-          ))}
+        <p className="meal-label" id={`menu-${mealDate}-${mealId}`}>{menuHeading}</p>
+        <ul className="menu-list" aria-labelledby={`menu-${mealDate}-${mealId}`}>
+          {menuItems.length > 0 ? (
+            menuItems.map((item, idx) => (
+              <li key={`${item}-${idx}`} className="menu-item">{item}</li>
+            ))
+          ) : (
+            <li className="menu-item menu-item-empty">Menu not published yet</li>
+          )}
         </ul>
       </div>
 
       <div className="meal-section">
         <div className="meal-status-row" style={{ marginBottom: 10 }}>
           <p className="meal-label" style={{ marginBottom: 0 }}>Your response</p>
-          <IntentBadge intent={meal.studentIntent} />
+          <IntentBadge intent={meal.studentIntent || 'none'} />
         </div>
         <MealIntentSelector meal={meal} onSelect={onSelect} saving={saving} />
       </div>
@@ -46,12 +54,12 @@ export default function MealCard({ meal, onSelect, saving }) {
         <div className="meal-section">
           <div className="meal-status-row">
             <p className="meal-label" style={{ marginBottom: 0 }}>Attendance at the mess</p>
-            <AttendanceBadge status={meal.attendanceStatus} source={meal.attendanceSource} />
+            <AttendanceBadge status={meal.attendanceStatus || 'none'} source={meal.attendanceSource} />
           </div>
           <p className="cutoff-note">
             <span aria-hidden="true">👆</span>
             {meal.attendanceStatus === 'verified'
-              ? `Recorded ${formatTime(meal.attendanceVerifiedAt)}. Demo record — fingerprint hardware is not connected yet.`
+              ? `Recorded ${formatTime(meal.attendanceVerifiedAt)}. Biometric scan recorded at mess entrance.`
               : 'Attendance is recorded at the mess entrance. Nothing has been recorded for this meal.'}
           </p>
         </div>

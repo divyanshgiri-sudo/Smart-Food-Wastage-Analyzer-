@@ -76,5 +76,6 @@ export function relativeTime(iso) {
 }
 
 export function sortMeals(meals) {
-  return [...meals].sort((a, b) => MEAL_ORDER[a.id] - MEAL_ORDER[b.id]);
+  if (!Array.isArray(meals)) return [];
+  return [...meals].sort((a, b) => (MEAL_ORDER[a?.id] ?? 99) - (MEAL_ORDER[b?.id] ?? 99));
 }

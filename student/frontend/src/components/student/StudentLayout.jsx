@@ -23,7 +23,7 @@ export default function StudentLayout() {
   const refreshUnread = useCallback(async () => {
     try {
       const data = await studentApi.notifications();
-      setUnreadCount(data.unreadCount);
+      setUnreadCount(Number(data?.unreadCount) || 0);
     } catch {
       // A failed badge count must never block the page the student came for.
     }
@@ -48,8 +48,8 @@ export default function StudentLayout() {
 
       <div className="student-main">
         <StudentHeader
-          title={current.title}
-          subtitle={current.subtitle}
+          title={current?.title || 'Dashboard'}
+          subtitle={current?.subtitle || ''}
           user={user}
           unreadCount={unreadCount}
         />

@@ -415,12 +415,57 @@ router.post('/student/meals/:mealId/intent', ...studentOnly, (req, res) => {
  * Planned (intents marked 'attending'), Attended (verified hardware scans),
  * Skipped (marked 'not attending' or missed), and Attendance Rate.
  */
+/**
+ * GET /api/student/dashboard
+ * Consolidated dashboard payload returning today's and tomorrow's meals,
+ * student attendance overview, and unread notification counts.
+ */
+router.get('/student/dashboard', ...studentOnly, (req, res) => {
+  const today = new Date();
+  const tomorrow = data.addDays(today, 1);
+  const overview = data.getStudentAttendanceOverview(req.user.id, 14);
+  const notifications = data.getNotifications(req.user.id);
+
+  res.json({
+    today: {
+      date: data.toDateKey(today),
+      label: 'Today',
+      meals: data.getMealsForDate(req.user.id, today),
+    },
+    tomorrow: {
+      date: data.toDateKey(tomorrow),
+      label: 'Tomorrow',
+      meals: data.getMealsForDate(req.user.id, tomorrow),
+    },
+    overview,
+    summary: overview.summary,
+    unreadNotifications: notifications.filter((n) => !n.read).length,
+    user: {
+      id: req.user.id,
+      name: req.user.name,
+      email: req.user.email,
+      studentId: req.user.studentId || req.user.id,
+      role: req.user.role,
+    },
+    demoMode: true,
+  });
+});
+
 router.get('/student/attendance-overview', ...studentOnly, (req, res) => {
   const days = Math.min(Math.max(parseInt(req.query.days, 10) || 14, 1), 90);
   const overview = data.getStudentAttendanceOverview(req.user.id, days);
   res.json({
     days,
-    ...overview,
+    mealsPlanned: Number(overview.mealsPlanned) || 0,
+    mealsAttended: Number(overview.mealsAttended) || 0,
+    mealsSkipped: Number(overview.mealsSkipped) || 0,
+    attendanceRate: Number(overview.attendanceRate) || 0,
+    summary: {
+      mealsPlanned: Number(overview.summary?.mealsPlanned ?? overview.mealsPlanned) || 0,
+      mealsAttended: Number(overview.summary?.mealsAttended ?? overview.mealsAttended) || 0,
+      mealsSkipped: Number(overview.summary?.mealsSkipped ?? overview.mealsSkipped) || 0,
+      attendanceRate: Number(overview.summary?.attendanceRate ?? overview.attendanceRate) || 0,
+    },
   });
 });
 

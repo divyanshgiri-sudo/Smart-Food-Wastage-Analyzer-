@@ -49,8 +49,9 @@ function minutesNow(now = new Date()) {
 }
 
 function atMinutes(dateKey, mins) {
-  const [y, m, d] = dateKey.split('-').map(Number);
-  return new Date(y, m - 1, d, Math.floor(mins / 60), mins % 60, 0, 0);
+  const safeMins = Number(mins) || 0;
+  const [y, m, d] = String(dateKey).split('-').map(Number);
+  return new Date(y, m - 1, d, Math.floor(safeMins / 60), safeMins % 60, 0, 0);
 }
 
 /* ------------------------------------------------------------------ *
@@ -277,14 +278,18 @@ function getMealsForDate(studentIdInput, dateInput) {
   const isPast = dateKey < todayKey;
   const nowMin = minutesNow(now);
 
-  return mealsForDateStmt.all({ studentId, dateKey }).map((row) => {
-    const cutoffAt = atMinutes(dateKey, row.cutoff_min);
+  const rows = mealsForDateStmt.all({ studentId, dateKey }) || [];
+  return rows.map((row) => {
+    const cutoffMin = Number(row.cutoff_min || 0);
+    const cutoffAt = atMinutes(dateKey, cutoffMin);
+    const startMin = Number(row.start_min || 0);
+    const endMin = Number(row.end_min || 0);
 
     let status = 'upcoming';
     if (isPast) status = 'completed';
     else if (isToday) {
-      if (nowMin >= row.end_min) status = 'completed';
-      else if (nowMin >= row.start_min) status = 'serving';
+      if (nowMin >= endMin) status = 'completed';
+      else if (nowMin >= startMin) status = 'serving';
     }
 
     const currentIntent = row.intent || 'none';
@@ -295,18 +300,17 @@ function getMealsForDate(studentIdInput, dateInput) {
       date: dateKey,
       time: row.time_window,
       cutoffLabel: row.cutoff_label,
-      cutoffAt: cutoffAt.toISOString(),
-      // Intent editing closes at the cutoff; future dates are always open.
-      intentOpen: now.getTime() < cutoffAt.getTime(),
+      cutoffAt: !isNaN(cutoffAt.getTime()) ? cutoffAt.toISOString() : new Date().toISOString(),
+      intentOpen: !isNaN(cutoffAt.getTime()) ? now.getTime() < cutoffAt.getTime() : true,
       menu: menu[row.id] || [],
       status,
       studentIntent: currentIntent,
       userIntent: currentIntent,
       intent: currentIntent,
-      intentUpdatedAt: row.intentUpdatedAt,
-      attendanceStatus: row.attendanceStatus || 'none',
-      attendanceSource: row.attendanceSource,
-      attendanceVerifiedAt: row.attendanceVerifiedAt,
+      intentUpdatedAt: row.intentUpdatedAt || row.intentupdatedat || null,
+      attendanceStatus: row.attendanceStatus || row.attendancestatus || 'none',
+      attendanceSource: row.attendanceSource || row.attendancesource || null,
+      attendanceVerifiedAt: row.attendanceVerifiedAt || row.attendanceverifiedat || null,
     };
   });
 }
@@ -380,25 +384,36 @@ function getHistory(studentIdInput, days = 14) {
     to: toDateKey(addDays(today, -1)),
   });
 
-  return rows.map((row) => ({ id: `${row.date}-${row.mealId}`, ...row }));
+  return rows.map((row) => {
+    const mealId = row.mealId || row.mealid;
+    const attendanceStatus = row.attendanceStatus || row.attendancestatus || 'none';
+    const attendanceSource = row.attendanceSource || row.attendancesource || null;
+    return {
+      ...row,
+      mealId,
+      attendanceStatus,
+      attendanceSource,
+      id: `${row.date}-${mealId}`,
+    };
+  });
 }
 
 function summariseHistory(rows) {
-  const planned = rows.filter((r) => r.intent === 'attending').length;
-  const notAttending = rows.filter((r) => r.intent === 'not_attending').length;
-  const attended = rows.filter((r) => r.attendanceStatus === 'verified').length;
-  const missed = rows.filter((r) => r.intent === 'attending' && r.attendanceStatus !== 'verified').length;
+  const safeRows = Array.isArray(rows) ? rows : [];
+  const planned = safeRows.filter((r) => r.intent === 'attending').length;
+  const notAttending = safeRows.filter((r) => r.intent === 'not_attending').length;
+  const attended = safeRows.filter((r) => (r.attendanceStatus || r.attendancestatus) === 'verified').length;
+  const missed = safeRows.filter((r) => r.intent === 'attending' && (r.attendanceStatus || r.attendancestatus) !== 'verified').length;
   const skipped = notAttending + missed;
-  const noResponse = rows.filter((r) => r.intent === 'none').length;
+  const noResponse = safeRows.filter((r) => r.intent === 'none').length;
 
   return {
-    mealsPlanned: planned,
-    mealsAttended: attended,
-    mealsSkipped: skipped,
-    noResponse,
-    // Share of meals the student planned that they actually turned up for.
+    mealsPlanned: Number(planned) || 0,
+    mealsAttended: Number(attended) || 0,
+    mealsSkipped: Number(skipped) || 0,
+    noResponse: Number(noResponse) || 0,
     attendanceRate: planned ? Math.min(100, Math.round((attended / planned) * 100)) : (attended ? 100 : 0),
-    totalRecords: rows.length,
+    totalRecords: safeRows.length,
   };
 }
 
@@ -413,8 +428,8 @@ function summariseHistory(rows) {
 function getStudentAttendanceOverview(studentIdInput, days = 14) {
   const cleanId = String(studentIdInput || '').trim();
   const user = db.prepare('SELECT id, student_id FROM users WHERE lower(id) = lower(?) OR lower(student_id) = lower(?)').get(cleanId, cleanId);
-  const userId = user ? user.id : cleanId;
-  const regNo = user?.student_id || userId;
+  const userId = user ? (user.id || user.ID) : cleanId;
+  const regNo = user ? (user.student_id || user.studentId || userId) : userId;
 
   const today = new Date();
   const toDate = toDateKey(today);
@@ -428,7 +443,8 @@ function getStudentAttendanceOverview(studentIdInput, days = 14) {
       AND intent = 'attending'
       AND meal_date BETWEEN ? AND ?
   `);
-  const mealsPlanned = plannedStmt.get(userId, regNo, fromDate, toDate)?.count || 0;
+  const plannedRow = plannedStmt.get(userId, regNo, fromDate, toDate);
+  const mealsPlanned = Number(plannedRow?.count || 0);
 
   // 2. Attended: verified hardware scans
   const attendedStmt = db.prepare(`
@@ -437,16 +453,18 @@ function getStudentAttendanceOverview(studentIdInput, days = 14) {
       AND status = 'verified'
       AND meal_date BETWEEN ? AND ?
   `);
-  const mealsAttended = attendedStmt.get(userId, regNo, fromDate, toDate)?.count || 0;
+  const attendedRow = attendedStmt.get(userId, regNo, fromDate, toDate);
+  const mealsAttended = Number(attendedRow?.count || 0);
 
-  // 3. Skipped: marked 'not attending' OR missed (planned 'attending' without attendance scan for past/concluded meals)
+  // 3. Skipped: marked 'not attending' OR missed
   const notAttendingStmt = db.prepare(`
     SELECT COUNT(*) as count FROM meal_intents
     WHERE (student_id = ? OR student_id = ?)
       AND intent = 'not_attending'
       AND meal_date BETWEEN ? AND ?
   `);
-  const notAttendingCount = notAttendingStmt.get(userId, regNo, fromDate, toDate)?.count || 0;
+  const notAttendingRow = notAttendingStmt.get(userId, regNo, fromDate, toDate);
+  const notAttendingCount = Number(notAttendingRow?.count || 0);
 
   const missedStmt = db.prepare(`
     SELECT COUNT(*) as count FROM meal_intents i
@@ -463,36 +481,38 @@ function getStudentAttendanceOverview(studentIdInput, days = 14) {
           AND a.status = 'verified'
       )
   `);
-  const missedCount = missedStmt.get(userId, regNo, fromDate, toDate, toDate, toDate, nowMin, userId, regNo)?.count || 0;
+  const missedRow = missedStmt.get(userId, regNo, fromDate, toDate, toDate, toDate, nowMin, userId, regNo);
+  const missedCount = Number(missedRow?.count || 0);
   const mealsSkipped = notAttendingCount + missedCount;
 
   // 4. Attendance Rate
   const attendanceRate = mealsPlanned > 0
-    ? Math.min(100, Math.round((mealsAttended / mealsPlanned) * 100))
+    ? Math.min(100, Math.max(0, Math.round((mealsAttended / mealsPlanned) * 100)))
     : (mealsAttended > 0 ? 100 : 0);
 
   return {
-    mealsPlanned,
-    mealsAttended,
-    mealsSkipped,
-    attendanceRate,
+    mealsPlanned: Number(mealsPlanned) || 0,
+    mealsAttended: Number(mealsAttended) || 0,
+    mealsSkipped: Number(mealsSkipped) || 0,
+    attendanceRate: Number(attendanceRate) || 0,
     summary: {
-      mealsPlanned,
-      mealsAttended,
-      mealsSkipped,
-      attendanceRate,
+      mealsPlanned: Number(mealsPlanned) || 0,
+      mealsAttended: Number(mealsAttended) || 0,
+      mealsSkipped: Number(mealsSkipped) || 0,
+      attendanceRate: Number(attendanceRate) || 0,
     },
   };
 }
 
 /** Per-day series for the student history chart (oldest first). */
 function historyTrend(rows, days = 7) {
+  const safeRows = Array.isArray(rows) ? rows : [];
   const byDate = new Map();
-  rows.forEach((row) => {
+  safeRows.forEach((row) => {
     if (!byDate.has(row.date)) byDate.set(row.date, { date: row.date, planned: 0, attended: 0 });
     const bucket = byDate.get(row.date);
     if (row.intent === 'attending') bucket.planned += 1;
-    if (row.attendanceStatus === 'verified') bucket.attended += 1;
+    if ((row.attendanceStatus || row.attendancestatus) === 'verified') bucket.attended += 1;
   });
 
   return Array.from(byDate.values())
@@ -515,14 +535,19 @@ const notificationsStmt = db.prepare(`
 `);
 
 function getNotifications(studentId) {
-  return notificationsStmt.all(studentId).map((n) => ({
-    id: n.id,
-    type: n.type,
-    title: n.title,
-    body: n.body,
-    createdAt: new Date(Date.now() - n.minutesAgo * MINUTE).toISOString(),
-    read: Boolean(n.isRead),
-  }));
+  const rows = notificationsStmt.all(studentId) || [];
+  return rows.map((n) => {
+    const minutesAgo = Number(n.minutesAgo ?? n.minutesago ?? 0);
+    const validMinutes = isNaN(minutesAgo) ? 0 : minutesAgo;
+    return {
+      id: n.id,
+      type: n.type,
+      title: n.title,
+      body: n.body,
+      createdAt: new Date(Date.now() - validMinutes * MINUTE).toISOString(),
+      read: Boolean(n.isRead ?? n.isread),
+    };
+  });
 }
 
 const markOneStmt = db.prepare(`
@@ -583,8 +608,12 @@ function getPreferences(studentId) {
   const row = getPreferencesStmt.get(studentId);
   if (!row) return { ...DEFAULT_PREFERENCES };
 
-  // SQLite has no boolean type — 0/1 come back as numbers.
-  return Object.fromEntries(Object.entries(row).map(([k, v]) => [k, Boolean(v)]));
+  return {
+    notificationsEnabled: Boolean(row.notificationsEnabled ?? row.notificationsenabled ?? DEFAULT_PREFERENCES.notificationsEnabled),
+    mealReminders: Boolean(row.mealReminders ?? row.mealreminders ?? DEFAULT_PREFERENCES.mealReminders),
+    cutoffReminders: Boolean(row.cutoffReminders ?? row.cutoffreminders ?? DEFAULT_PREFERENCES.cutoffReminders),
+    menuUpdates: Boolean(row.menuUpdates ?? row.menuupdates ?? DEFAULT_PREFERENCES.menuUpdates),
+  };
 }
 
 /** Ignores unknown keys and non-booleans, so a bad body cannot corrupt a row. */
@@ -655,9 +684,9 @@ function adminMealSnapshot() {
     }
 
     const profile = ADMIN_RESPONSE_PROFILE[meal.id] || { attending: 0, notAttending: 0, prepared: 0, served: 0 };
-    const dbAttending = liveAttendingStmt.get(dateKey, meal.id)?.count || 0;
-    const dbNotAttending = liveNotAttendingStmt.get(dateKey, meal.id)?.count || 0;
-    const dbServed = liveServedStmt.get(dateKey, meal.id)?.count || 0;
+    const dbAttending = Number(liveAttendingStmt.get(dateKey, meal.id)?.count || 0);
+    const dbNotAttending = Number(liveNotAttendingStmt.get(dateKey, meal.id)?.count || 0);
+    const dbServed = Number(liveServedStmt.get(dateKey, meal.id)?.count || 0);
 
     const attending = profile.attending + dbAttending;
     const notAttending = profile.notAttending + dbNotAttending;

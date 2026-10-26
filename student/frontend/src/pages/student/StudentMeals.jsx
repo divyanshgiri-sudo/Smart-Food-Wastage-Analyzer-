@@ -17,7 +17,7 @@ export default function StudentMeals() {
   const [day, setDay] = useState('today');
 
   const activeDay = data?.[day];
-  const meals = activeDay ? sortMeals(activeDay.meals) : [];
+  const meals = sortMeals(activeDay?.meals);
   const counts = summariseDay(meals);
 
   return (
@@ -68,7 +68,7 @@ export default function StudentMeals() {
         <div className="card">
           <ErrorState
             title="Unable to load your meals"
-            message={error.message}
+            message={error?.message || 'Please check your connection and try again.'}
             onRetry={reload}
           />
         </div>
@@ -84,7 +84,7 @@ export default function StudentMeals() {
       )}
 
       {!loading && !error && meals.length > 0 && (
-        <section aria-label={`${activeDay.label}'s meals`}>
+        <section aria-label={`${activeDay?.label || day}'s meals`}>
           <div className="meal-grid">
             {meals.map((meal) => (
               <MealCard

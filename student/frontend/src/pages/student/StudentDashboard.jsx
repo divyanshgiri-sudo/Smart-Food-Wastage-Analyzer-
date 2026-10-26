@@ -22,14 +22,14 @@ export default function StudentDashboard() {
   const { data, loading, error, reload, saveIntent, savingKey } = useMeals();
   const overview = useApi(() => studentApi.attendanceOverview(14), []);
 
-  const todayMeals = data ? sortMeals(data.today.meals) : [];
-  const tomorrowMeals = data ? sortMeals(data.tomorrow.meals) : [];
+  const todayMeals = sortMeals(data?.today?.meals);
+  const tomorrowMeals = sortMeals(data?.tomorrow?.meals);
   const counts = summariseDay(todayMeals);
 
   // Once every meal today is closed, the useful next action is tomorrow.
-  const todayClosed = todayMeals.length > 0 && todayMeals.every((meal) => !meal.intentOpen);
-  const openToday = todayMeals.filter((meal) => meal.intentOpen);
-  const nextCutoff = openToday.length ? openToday[0] : null;
+  const todayClosed = Array.isArray(todayMeals) && todayMeals.length > 0 && todayMeals.every((meal) => !meal?.intentOpen);
+  const openToday = Array.isArray(todayMeals) ? todayMeals.filter((meal) => Boolean(meal?.intentOpen)) : [];
+  const nextCutoff = openToday.length > 0 ? openToday[0] : null;
 
   const firstName = user?.name?.split(' ')[0] || 'there';
 
@@ -89,21 +89,27 @@ export default function StudentDashboard() {
           {!loading && error && (
             <ErrorState
               title="Unable to load your meals"
-              message={error.message}
+              message={error?.message || 'Please check your connection and try again.'}
               onRetry={reload}
             />
           )}
 
+          {!loading && !error && todayMeals.length === 0 && (
+            <p className="summary-sub" style={{ padding: 16, margin: 0, color: 'var(--text-muted)' }}>
+              No meals scheduled for today.
+            </p>
+          )}
+
           {!loading && !error &&
             todayMeals.map((meal) => (
-              <div className="summary-row" key={meal.id}>
+              <div className="summary-row" key={meal.id || meal.name}>
                 <div className="summary-meal">
                   <span className="summary-name">{meal.name}</span>
                   <span className="summary-time">{meal.time}</span>
                 </div>
                 <div className="summary-badges">
-                  <IntentBadge intent={meal.studentIntent} />
-                  <AttendanceBadge status={meal.attendanceStatus} source={meal.attendanceSource} />
+                  <IntentBadge intent={meal.studentIntent || 'none'} />
+                  <AttendanceBadge status={meal.attendanceStatus || 'none'} source={meal.attendanceSource} />
                 </div>
               </div>
             ))}
@@ -128,7 +134,7 @@ export default function StudentDashboard() {
           <div className="card">
             <ErrorState
               title="Unable to load your meals"
-              message={error.message}
+              message={error?.message || 'Please check your connection and try again.'}
               onRetry={reload}
             />
           </div>
@@ -147,7 +153,7 @@ export default function StudentDashboard() {
           <div className="meal-grid">
             {todayMeals.map((meal) => (
               <MealCard
-                key={meal.id}
+                key={meal.id || `${meal.date}-${meal.name}`}
                 meal={meal}
                 saving={savingKey === `${meal.date}-${meal.id}`}
                 onSelect={(intent) => saveIntent(meal, intent)}
@@ -176,7 +182,7 @@ export default function StudentDashboard() {
           <div className="meal-grid">
             {tomorrowMeals.map((meal) => (
               <MealCard
-                key={meal.id}
+                key={meal.id || `${meal.date}-${meal.name}`}
                 meal={meal}
                 saving={savingKey === `${meal.date}-${meal.id}`}
                 onSelect={(intent) => saveIntent(meal, intent)}
@@ -210,39 +216,39 @@ export default function StudentDashboard() {
           <div className="card">
             <ErrorState
               title="Unable to load your attendance overview"
-              message={overview.error.message}
+              message={overview.error?.message || 'Please check your connection and try again.'}
               onRetry={overview.reload}
             />
           </div>
         )}
 
-        {!overview.loading && !overview.error && overview.data && (
+        {!overview.loading && !overview.error && (
           <div className="stat-grid">
             <StatCard
               icon="🍽️"
               label="Meals planned"
-              value={overview.data.mealsPlanned ?? overview.data.summary?.mealsPlanned ?? 0}
+              value={Number(overview.data?.mealsPlanned ?? overview.data?.summary?.mealsPlanned ?? 0)}
               hint="You said you'd attend"
             />
             <StatCard
               icon="✓"
               label="Meals attended"
-              value={overview.data.mealsAttended ?? overview.data.summary?.mealsAttended ?? 0}
+              value={Number(overview.data?.mealsAttended ?? overview.data?.summary?.mealsAttended ?? 0)}
               hint="Recorded at the mess"
               accent="green"
             />
             <StatCard
               icon="✕"
               label="Meals skipped"
-              value={overview.data.mealsSkipped ?? overview.data.summary?.mealsSkipped ?? 0}
+              value={Number(overview.data?.mealsSkipped ?? overview.data?.summary?.mealsSkipped ?? 0)}
               hint="Marked not attending or missed"
             />
             <StatCard
               icon="📈"
               label="Attendance rate"
-              value={`${overview.data.attendanceRate ?? overview.data.summary?.attendanceRate ?? 0}%`}
+              value={`${Math.round(Number(overview.data?.attendanceRate ?? overview.data?.summary?.attendanceRate ?? 0))}%`}
               hint="Of the meals you planned"
-              meter={overview.data.attendanceRate ?? overview.data.summary?.attendanceRate ?? 0}
+              meter={Math.round(Number(overview.data?.attendanceRate ?? overview.data?.summary?.attendanceRate ?? 0))}
             />
           </div>
         )}

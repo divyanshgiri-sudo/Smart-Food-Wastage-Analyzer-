@@ -509,8 +509,12 @@ function getPreferences(studentId) {
   const row = getPreferencesStmt.get(studentId);
   if (!row) return { ...DEFAULT_PREFERENCES };
 
-  // SQLite has no boolean type — 0/1 come back as numbers.
-  return Object.fromEntries(Object.entries(row).map(([k, v]) => [k, Boolean(v)]));
+  return {
+    notificationsEnabled: Boolean(row.notificationsEnabled ?? row.notificationsenabled ?? DEFAULT_PREFERENCES.notificationsEnabled),
+    mealReminders: Boolean(row.mealReminders ?? row.mealreminders ?? DEFAULT_PREFERENCES.mealReminders),
+    cutoffReminders: Boolean(row.cutoffReminders ?? row.cutoffreminders ?? DEFAULT_PREFERENCES.cutoffReminders),
+    menuUpdates: Boolean(row.menuUpdates ?? row.menuupdates ?? DEFAULT_PREFERENCES.menuUpdates),
+  };
 }
 
 /** Ignores unknown keys and non-booleans, so a bad body cannot corrupt a row. */
@@ -588,9 +592,9 @@ function adminMealSnapshot(customDateKey, customMinutes) {
       statusRaw = 'serving';
     }
 
-    const dbAttending = liveAttendingStmt.get(dateKey, meal.id)?.count || 0;
-    const dbNotAttending = liveNotAttendingStmt.get(dateKey, meal.id)?.count || 0;
-    const dbServed = liveServedStmt.get(dateKey, meal.id)?.count || 0;
+    const dbAttending = Number(liveAttendingStmt.get(dateKey, meal.id)?.count || 0);
+    const dbNotAttending = Number(liveNotAttendingStmt.get(dateKey, meal.id)?.count || 0);
+    const dbServed = Number(liveServedStmt.get(dateKey, meal.id)?.count || 0);
 
     const attending = dbAttending;
     const notAttending = dbNotAttending;

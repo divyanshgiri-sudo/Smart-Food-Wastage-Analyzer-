@@ -73,6 +73,9 @@ function normalizeSql(rawSql, args) {
     return { sql, params };
   }
 
+  // 7. Quote camelCase aliases so Postgres returns them with exact matching case
+  sql = replaceOutsideQuotes(sql, /\bAS\s+([a-zA-Z0-9_]*[A-Z][a-zA-Z0-9_]*)\b/g, (_, alias) => `AS "${alias}"`);
+
   // 6. Handle positional parameters ? outside quotes
   let paramIndex = 0;
   sql = replaceOutsideQuotes(sql, /\?/g, () => '$' + (++paramIndex));

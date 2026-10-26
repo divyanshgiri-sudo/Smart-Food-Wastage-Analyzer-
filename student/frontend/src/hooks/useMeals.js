@@ -43,7 +43,7 @@ export function useMeals() {
             if (!day || day.date !== scanResult.date) return day;
             return {
               ...day,
-              meals: day.meals.map((m) =>
+              meals: (day.meals || []).map((m) =>
                 m.id === scanResult.meal
                   ? {
                       ...m,
@@ -92,7 +92,7 @@ export function useMeals() {
           if (!current) return current;
           const replaceIn = (day) => ({
             ...day,
-            meals: day.meals.map((m) => (m.id === updated.id && m.date === updated.date ? updated : m)),
+            meals: (day?.meals || []).map((m) => (m.id === updated.id && m.date === updated.date ? updated : m)),
           });
           return { ...current, today: replaceIn(current.today), tomorrow: replaceIn(current.tomorrow) };
         });
@@ -128,10 +128,11 @@ export function useMeals() {
 
 /** Counts of each response state for a day — used by summary strips. */
 export function summariseDay(meals = []) {
+  if (!Array.isArray(meals)) return { attending: 0, notAttending: 0, pending: 0, total: 0 };
   return {
-    attending: meals.filter((m) => m.studentIntent === 'attending').length,
-    notAttending: meals.filter((m) => m.studentIntent === 'not_attending').length,
-    pending: meals.filter((m) => m.studentIntent === 'none' && m.intentOpen).length,
+    attending: meals.filter((m) => m?.studentIntent === 'attending').length,
+    notAttending: meals.filter((m) => m?.studentIntent === 'not_attending').length,
+    pending: meals.filter((m) => m?.studentIntent === 'none' && Boolean(m?.intentOpen)).length,
     total: meals.length,
   };
 }
