@@ -19,6 +19,7 @@
     "googleapis": "^188.0.0",
     "jsonwebtoken": "^9.0.3",
     "node-cron": "^4.6.0",
+    "pg": "^8.23.1",
     "socket.io": "^4.8.3"
   }
 }

@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS ml_predictions (
   lower_bound          INTEGER,
   upper_bound          INTEGER,
   status               TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'recorded')),
-  created_at           TEXT DEFAULT (datetime('now')),
+  created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   recorded_at          TEXT DEFAULT NULL
 );
 

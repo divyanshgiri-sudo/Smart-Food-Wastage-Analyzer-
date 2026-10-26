@@ -457,7 +457,7 @@ function getAggregatedHistory() {
 
   const updateActualStmt = db.prepare(`
     UPDATE ml_predictions
-    SET actual_attendance = ?, status = 'recorded', recorded_at = datetime('now')
+    SET actual_attendance = ?, status = 'recorded', recorded_at = CURRENT_TIMESTAMP
     WHERE prediction_id = ?
   `);
 

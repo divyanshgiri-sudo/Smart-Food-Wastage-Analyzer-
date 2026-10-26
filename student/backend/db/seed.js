@@ -115,30 +115,34 @@ const NOTIFICATIONS = [
 ];
 
 const insertUser = db.prepare(`
-  INSERT OR IGNORE INTO users
+  INSERT INTO users
     (id, role, name, email, password_hash, designation, mess,
      student_id, fingerprint_id, hostel, room, program, year, mess_plan, joined_on)
   VALUES
     (@id, @role, @name, @email, @passwordHash, @designation, @mess,
      @studentId, @fingerprintId, @hostel, @room, @program, @year, @messPlan, @joinedOn)
+  ON CONFLICT DO NOTHING
 `);
 
 const insertMeal = db.prepare(`
-  INSERT OR IGNORE INTO meals
+  INSERT INTO meals
     (id, name, time_window, start_min, end_min, cutoff_min, cutoff_label, sort_order)
   VALUES
     (@id, @name, @timeWindow, @startMin, @endMin, @cutoffMin, @cutoffLabel, @sortOrder)
+  ON CONFLICT DO NOTHING
 `);
 
 const insertMenuItem = db.prepare(`
-  INSERT OR IGNORE INTO menu_items (day_of_week, meal_id, position, item)
+  INSERT INTO menu_items (day_of_week, meal_id, position, item)
   VALUES (?, ?, ?, ?)
+  ON CONFLICT DO NOTHING
 `);
 
 const insertNotification = db.prepare(`
-  INSERT OR IGNORE INTO notifications
+  INSERT INTO notifications
     (id, type, title, body, minutes_ago, default_read, sort_order)
   VALUES (@id, @type, @title, @body, @minutesAgo, @defaultRead, @sortOrder)
+  ON CONFLICT DO NOTHING
 `);
 
 const seedReferenceData = db.transaction(() => {
@@ -182,14 +186,16 @@ function seededPick(seed, options) {
 }
 
 const insertIntent = db.prepare(`
-  INSERT OR IGNORE INTO meal_intents (student_id, meal_date, meal_id, intent, updated_at)
+  INSERT INTO meal_intents (student_id, meal_date, meal_id, intent, updated_at)
   VALUES (?, ?, ?, ?, ?)
+  ON CONFLICT DO NOTHING
 `);
 
 const insertAttendance = db.prepare(`
-  INSERT OR IGNORE INTO attendance
+  INSERT INTO attendance
     (student_id, meal_date, meal_id, status, source, verified_at, device_id)
   VALUES (?, ?, ?, ?, ?, ?, NULL)
+  ON CONFLICT DO NOTHING
 `);
 
 const listStudents = db.prepare("SELECT id FROM users WHERE role = 'student'");

@@ -40,14 +40,16 @@ function toPythonWeekday(dateStr) {
  * Computes actual attendance count for a given meal and relative day offset
  */
 function getHistoricalMealAttendance(mealId, dateStr, offsetDays) {
-  const modifier = `${offsetDays} days`;
+  const d = new Date(dateStr + 'T12:00:00Z');
+  d.setUTCDate(d.getUTCDate() + Number(offsetDays));
+  const targetDateStr = d.toISOString().slice(0, 10);
   const stmt = db.prepare(`
     SELECT COUNT(*) as count 
     FROM attendance 
-    WHERE meal_id = ? AND meal_date = date(?, ?) AND status = 'verified'
+    WHERE meal_id = ? AND meal_date = ? AND status = 'verified'
   `);
-  const row = stmt.get(mealId, dateStr, modifier);
-  return row?.count || 0;
+  const row = stmt.get(mealId, targetDateStr);
+  return Number(row?.count) || 0;
 }
 
 /**
@@ -71,20 +73,23 @@ function getRecentSessionAttendances(targetDate, targetMeal, limit = 14) {
  * Calculates historical average attendance for the same meal on the same day of the week
  */
 function getHistoricalSameWeekdayAttendance(mealId, targetDate) {
+  const targetDow = new Date(targetDate + 'T12:00:00Z').getUTCDay();
   const stmt = db.prepare(`
-    SELECT AVG(session_count) as avg_attendance
-    FROM (
-      SELECT COUNT(*) as session_count
-      FROM attendance
-      WHERE status = 'verified'
-        AND meal_id = ?
-        AND meal_date < ?
-        AND strftime('%w', meal_date) = strftime('%w', ?)
-      GROUP BY meal_date
-    )
+    SELECT meal_date, COUNT(*) as session_count
+    FROM attendance
+    WHERE status = 'verified'
+      AND meal_id = ?
+      AND meal_date < ?
+    GROUP BY meal_date
   `);
-  const row = stmt.get(mealId, targetDate, targetDate);
-  return row?.avg_attendance || null;
+  const rows = stmt.all(mealId, targetDate);
+  const matchingRows = rows.filter(r => {
+    const d = new Date(r.meal_date + 'T12:00:00Z');
+    return d.getUTCDay() === targetDow;
+  });
+  if (matchingRows.length === 0) return null;
+  const sum = matchingRows.reduce((acc, r) => acc + Number(r.session_count), 0);
+  return Number((sum / matchingRows.length).toFixed(1));
 }
 
 /**
@@ -248,7 +253,7 @@ async function generateMealPrediction({
       INSERT INTO ml_predictions (
         prediction_id, prediction_date, meal_type, predicted_attendance,
         actual_attendance, lower_bound, upper_bound, status, created_at
-      ) VALUES (?, ?, ?, ?, NULL, ?, ?, 'pending', datetime('now'))
+      ) VALUES (?, ?, ?, ?, NULL, ?, ?, 'pending', CURRENT_TIMESTAMP)
       ON CONFLICT(prediction_id) DO UPDATE SET
         predicted_attendance = excluded.predicted_attendance,
         lower_bound = excluded.lower_bound,
@@ -282,10 +287,11 @@ async function generateMealPrediction({
 
     try {
       const fallbackStmt = db.prepare(`
-        INSERT OR IGNORE INTO ml_predictions (
+        INSERT INTO ml_predictions (
           prediction_id, prediction_date, meal_type, predicted_attendance,
           actual_attendance, lower_bound, upper_bound, status, created_at
-        ) VALUES (?, ?, ?, ?, NULL, ?, ?, 'pending', datetime('now'))
+        ) VALUES (?, ?, ?, ?, NULL, ?, ?, 'pending', CURRENT_TIMESTAMP)
+        ON CONFLICT DO NOTHING
       `);
       fallbackStmt.run(
         fallbackId,
@@ -383,7 +389,7 @@ async function recordSessionAttendance({
   // 4. Update ml_predictions in SQLite
   const updateStmt = db.prepare(`
     UPDATE ml_predictions 
-    SET actual_attendance = ?, status = 'recorded', recorded_at = datetime('now')
+    SET actual_attendance = ?, status = 'recorded', recorded_at = CURRENT_TIMESTAMP
     WHERE prediction_id = ?
   `);
   updateStmt.run(finalActual, effectivePredictionId);
