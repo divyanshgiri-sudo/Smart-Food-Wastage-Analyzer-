@@ -13,7 +13,7 @@ import { useAuth } from '../context/AuthContext';
 import '../styles/login.css';
 
 export default function LoginStudent() {
-  const { login, isAuthenticated, bootstrapping } = useAuth();
+  const { login, isAuthenticated, role, bootstrapping } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -22,8 +22,10 @@ export default function LoginStudent() {
   const [formError, setFormError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  // Already signed in: go straight to the student portal.
-  if (!bootstrapping && isAuthenticated) {
+  const isStudent = role && String(role).trim().toLowerCase() === 'student';
+
+  // Already signed in: go straight to the student portal only if student.
+  if (!bootstrapping && isAuthenticated && isStudent) {
     return <Navigate to="/student/dashboard" replace />;
   }
 

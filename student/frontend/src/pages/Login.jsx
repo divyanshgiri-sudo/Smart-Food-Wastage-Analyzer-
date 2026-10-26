@@ -26,7 +26,7 @@ const LeafIcon = () => (
 );
 
 export default function Login() {
-  const { loginWithOtp, requestOtp, isAuthenticated, role, bootstrapping } = useAuth();
+  const { loginWithOtp, requestOtp, isAuthenticated, role, bootstrapping, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -37,9 +37,44 @@ export default function Login() {
   const [successMsg, setSuccessMsg] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  // Already signed in: navigate straight to the student dashboard
+  const isStudent = role && String(role).trim().toLowerCase() === 'student';
+
+  // Already signed in: navigate straight to the student dashboard only if student role matches
   if (!bootstrapping && isAuthenticated) {
-    return <Navigate to="/student/dashboard" replace />;
+    if (isStudent) {
+      return <Navigate to="/student/dashboard" replace />;
+    }
+
+    // Authenticated with a non-student or invalid role: show error state rather than redirecting
+    return (
+      <div style={{ minHeight: '100dvh', display: 'grid', placeItems: 'center', padding: 24, background: '#f8fafc' }}>
+        <div className="card" style={{ maxWidth: 440, width: '100%', padding: '2rem', textAlign: 'center', background: '#fff', borderRadius: 16, border: '1px solid #e2e7f0', boxShadow: '0 20px 60px -12px rgba(0,0,0,0.12)' }}>
+          <span style={{ fontSize: 40, display: 'block', marginBottom: 16 }} aria-hidden="true">⚠️</span>
+          <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#0f172a', marginBottom: 8 }}>
+            Unauthorized Account Role
+          </h2>
+          <p style={{ color: '#64748b', fontSize: '0.875rem', marginBottom: 20 }}>
+            You are signed in with role <strong>{role || 'Unknown'}</strong>. This portal is only accessible to students.
+          </p>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => logout()}
+            style={{
+              padding: '10px 24px',
+              background: '#0f1d33',
+              color: '#fff',
+              border: 'none',
+              borderRadius: 8,
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            Sign Out & Switch Account
+          </button>
+        </div>
+      </div>
+    );
   }
 
   async function handleRequestOtp(event) {
