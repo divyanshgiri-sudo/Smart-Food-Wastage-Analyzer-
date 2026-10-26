@@ -20,7 +20,7 @@ import { formatLongDate, greeting, sortMeals } from '../../utils/format';
 export default function StudentDashboard() {
   const { user } = useAuth();
   const { data, loading, error, reload, saveIntent, savingKey } = useMeals();
-  const history = useApi(() => studentApi.history(14), []);
+  const overview = useApi(() => studentApi.attendanceOverview(14), []);
 
   const todayMeals = data ? sortMeals(data.today.meals) : [];
   const tomorrowMeals = data ? sortMeals(data.tomorrow.meals) : [];
@@ -198,7 +198,7 @@ export default function StudentDashboard() {
           </Link>
         </div>
 
-        {history.loading && (
+        {overview.loading && (
           <div className="stat-grid" aria-hidden="true">
             {Array.from({ length: 4 }).map((_, i) => (
               <div key={i} className="skeleton" style={{ height: 104 }} />
@@ -206,43 +206,43 @@ export default function StudentDashboard() {
           </div>
         )}
 
-        {!history.loading && history.error && (
+        {!overview.loading && overview.error && (
           <div className="card">
             <ErrorState
               title="Unable to load your attendance overview"
-              message={history.error.message}
-              onRetry={history.reload}
+              message={overview.error.message}
+              onRetry={overview.reload}
             />
           </div>
         )}
 
-        {!history.loading && !history.error && history.data && (
+        {!overview.loading && !overview.error && overview.data && (
           <div className="stat-grid">
             <StatCard
               icon="🍽️"
               label="Meals planned"
-              value={history.data.summary.mealsPlanned}
+              value={overview.data.mealsPlanned ?? overview.data.summary?.mealsPlanned ?? 0}
               hint="You said you'd attend"
             />
             <StatCard
               icon="✓"
               label="Meals attended"
-              value={history.data.summary.mealsAttended}
+              value={overview.data.mealsAttended ?? overview.data.summary?.mealsAttended ?? 0}
               hint="Recorded at the mess"
               accent="green"
             />
             <StatCard
               icon="✕"
               label="Meals skipped"
-              value={history.data.summary.mealsSkipped}
-              hint="You told us in advance"
+              value={overview.data.mealsSkipped ?? overview.data.summary?.mealsSkipped ?? 0}
+              hint="Marked not attending or missed"
             />
             <StatCard
               icon="📈"
               label="Attendance rate"
-              value={`${history.data.summary.attendanceRate}%`}
+              value={`${overview.data.attendanceRate ?? overview.data.summary?.attendanceRate ?? 0}%`}
               hint="Of the meals you planned"
-              meter={history.data.summary.attendanceRate}
+              meter={overview.data.attendanceRate ?? overview.data.summary?.attendanceRate ?? 0}
             />
           </div>
         )}

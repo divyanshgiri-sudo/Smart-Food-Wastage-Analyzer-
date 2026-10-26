@@ -22,7 +22,7 @@ export default function Dashboard() {
   useEffect(() => {
     const timer = setInterval(() => {
       setCurrentTime(new Date());
-    }, 10000); // Check every 10 seconds
+    }, 5000); // Check every 5 seconds for immediate boundary rollover
     return () => clearInterval(timer);
   }, []);
 
@@ -61,12 +61,26 @@ export default function Dashboard() {
     fetchSummary();
     fetchHardwareStatus();
 
-    // Socket.io real-time connection
+    // Socket.io real-time connection to Mess backend
     const socket = io(SOCKET_URL, { transports: ['websocket', 'polling'] });
 
     socket.on('connect', () => {
       console.log('[mess dashboard] Connected to real-time socket server');
     });
+
+    // Optional direct socket connection to student backend (port 5000 in dev) for multi-port environments
+    const studentSocketUrl = (import.meta.env.VITE_STUDENT_SOCKET_URL || 'http://localhost:5000').replace(/\/+$/, '');
+    let studentSocket = null;
+    if (studentSocketUrl && studentSocketUrl !== SOCKET_URL) {
+      try {
+        studentSocket = io(studentSocketUrl, { transports: ['websocket', 'polling'] });
+        studentSocket.on('connect', () => {
+          console.log('[mess dashboard] Connected to student real-time socket server:', studentSocketUrl);
+        });
+      } catch (err) {
+        console.warn('[mess dashboard] Could not connect to student socket:', err);
+      }
+    }
 
     const handleAttendanceUpdate = (scanResult) => {
       console.log('[Dashboard Socket] attendance:update received:', scanResult);
@@ -131,6 +145,54 @@ export default function Dashboard() {
       };
 
       setRecentActivity(prev => [newActivity, ...prev].slice(0, 6));
+
+      // Dynamically re-render Confirmed Intentions metric without manual page refresh
+      setDashboardData(prev => {
+        if (!prev) return prev;
+        const targetMealId = intentData.mealId;
+        const isAttending = intentData.intent === 'attending';
+
+        const updatedMeals = (prev.meals || []).map(m => {
+          if (m.id === targetMealId) {
+            const currentConfirmed = m.confirmed || 0;
+            const newConfirmed = isAttending ? currentConfirmed + 1 : Math.max(0, currentConfirmed - 1);
+            return {
+              ...m,
+              confirmed: newConfirmed,
+              attending: newConfirmed,
+            };
+          }
+          return m;
+        });
+
+        let updatedCurrent = prev.currentMeal;
+        if (updatedCurrent && updatedCurrent.id === targetMealId) {
+          const currentConfirmed = updatedCurrent.confirmed || 0;
+          const newConfirmed = isAttending ? currentConfirmed + 1 : Math.max(0, currentConfirmed - 1);
+          updatedCurrent = {
+            ...updatedCurrent,
+            confirmed: newConfirmed,
+          };
+        }
+
+        let updatedSummary = prev.summary;
+        if (updatedSummary && updatedCurrent && updatedCurrent.id === targetMealId) {
+          updatedSummary = {
+            ...updatedSummary,
+            confirmed: updatedCurrent.confirmed,
+          };
+        }
+
+        return {
+          ...prev,
+          meals: updatedMeals,
+          currentMeal: updatedCurrent,
+          summary: updatedSummary,
+        };
+      });
+
+      // Synchronize with database truth
+      fetchSummary();
     };
 
     const handleHardwareModeChange = (data) => {
@@ -163,8 +225,15 @@ export default function Dashboard() {
     socket.on('hardware:mode_changed', handleHardwareModeChange);
     socket.on('hardware:fingerprint_captured', handleFingerprintCaptured);
 
+    if (studentSocket) {
+      studentSocket.on('intent:update', handleIntentUpdate);
+      studentSocket.on('dashboard:stats_changed', () => fetchSummary());
+      studentSocket.on('attendance:update', handleAttendanceUpdate);
+    }
+
     return () => {
       socket.disconnect();
+      if (studentSocket) studentSocket.disconnect();
     };
   }, [fetchSummary, fetchHardwareStatus]);
 
@@ -274,34 +343,23 @@ export default function Dashboard() {
 
   let activeMeal = null;
   let activeStatus = 'Serving';
+  let isTomorrow = false;
 
-  // 1. Is local time inside any meal's serving window?
-  const currentlyServing = sortedMeals.find(m => localMinutes >= m.startMin && localMinutes <= m.endMin);
-  if (currentlyServing) {
-    activeMeal = currentlyServing;
-    activeStatus = 'Serving';
+  // Exact immediate meal rollover logic:
+  // The exact moment a meal's end time passes, the "Active Meal" instantly rolls over
+  // to the next upcoming meal (e.g., right after Lunch ends, immediately display Dinner;
+  // after Dinner ends, display tomorrow's Breakfast).
+  const activeCandidate = sortedMeals.find(m => localMinutes <= m.endMin);
+
+  if (activeCandidate) {
+    activeMeal = activeCandidate;
+    activeStatus = localMinutes >= activeCandidate.startMin ? 'Serving' : 'Upcoming';
+    isTomorrow = false;
   } else {
-    // 2. Meal transition windows:
-    const lunch = sortedMeals.find(m => m.id === 'lunch');
-    const dinner = sortedMeals.find(m => m.id === 'dinner');
-    const lunchStart = lunch ? lunch.startMin : 750;
-    const dinnerStart = dinner ? dinner.startMin : 1155;
-
-    if (localMinutes < lunchStart) {
-      // Before lunch start (12:30 PM), active meal is Breakfast
-      const breakfast = sortedMeals.find(m => m.id === 'breakfast') || sortedMeals[0];
-      activeMeal = breakfast;
-      activeStatus = localMinutes < breakfast.startMin ? 'Upcoming' : 'Completed';
-    } else if (localMinutes < dinnerStart) {
-      // Between lunch start (12:30 PM) and dinner start (19:15 PM), active meal is Lunch
-      activeMeal = lunch || sortedMeals[1] || sortedMeals[0];
-      activeStatus = (lunch && localMinutes <= lunch.endMin) ? 'Serving' : 'Completed';
-    } else {
-      // At or after dinner start (19:15 PM), active meal is Dinner
-      const dinnerMeal = dinner || sortedMeals[sortedMeals.length - 1];
-      activeMeal = dinnerMeal;
-      activeStatus = localMinutes <= dinnerMeal.endMin ? 'Serving' : 'Completed';
-    }
+    // All meals today have concluded. Rollover immediately to tomorrow's Breakfast!
+    activeMeal = sortedMeals[0];
+    activeStatus = 'Upcoming';
+    isTomorrow = true;
   }
 
   // Next meal candidate
@@ -311,10 +369,17 @@ export default function Dashboard() {
   const currentMeal = {
     ...activeMeal,
     status: activeStatus,
-    label: activeMeal.label || `${activeMeal.name} (${activeMeal.time})`,
-    predicted: activeMeal.predicted ?? (dashboardData?.summary?.predicted ?? 0),
-    confirmed: activeMeal.confirmed ?? (dashboardData?.summary?.confirmed ?? 0),
-    actual: activeMeal.actual ?? (dashboardData?.summary?.actualSoFar ?? 0),
+    isTomorrow: isTomorrow || Boolean(dashboardData?.isTomorrow) || Boolean(dashboardData?.currentMeal?.isTomorrow),
+    label: (activeMeal.label || `${activeMeal.name} (${activeMeal.time})`) + (isTomorrow ? ' (Tomorrow)' : ''),
+    predicted: (isTomorrow && dashboardData?.currentMeal?.isTomorrow)
+      ? (dashboardData.currentMeal.predicted ?? activeMeal.predicted ?? 0)
+      : (dashboardData?.currentMeal?.predicted ?? activeMeal.predicted ?? (dashboardData?.summary?.predicted ?? 0)),
+    confirmed: (isTomorrow && dashboardData?.currentMeal?.isTomorrow)
+      ? (dashboardData.currentMeal.confirmed ?? 0)
+      : (dashboardData?.currentMeal?.id === activeMeal.id && dashboardData?.currentMeal?.confirmed !== undefined
+          ? dashboardData.currentMeal.confirmed
+          : (activeMeal.confirmed ?? (dashboardData?.summary?.confirmed ?? 0))),
+    actual: isTomorrow ? 0 : (activeMeal.actual ?? (dashboardData?.summary?.actualSoFar ?? 0)),
   };
 
   const nextMeal = {

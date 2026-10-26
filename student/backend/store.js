@@ -15,7 +15,7 @@
  */
 
 const { db, dbPath } = require('./db');
-const { seedReferenceData } = require('./db/seed');
+const { seedReferenceData, seedDemoHistory } = require('./db/seed');
 
 const MINUTE = 60 * 1000;
 
@@ -59,6 +59,7 @@ function atMinutes(dateKey, mins) {
 
 try {
   seedReferenceData();
+  seedDemoHistory({ toDateKey, addDays, atMinutes, minutesNow }, 21);
 } catch (err) {
   if (err.message.includes('locked') || err.message.includes('busy')) {
     console.log('[store] Database locked by another process during startup seed; skipping redundant seed.');
@@ -343,10 +344,10 @@ function setMealIntent(studentIdInput, dateKeyInput, mealId, intent) {
 const historyStmt = db.prepare(`
   WITH slots AS (
     SELECT meal_date, meal_id FROM meal_intents
-      WHERE student_id = @studentId AND meal_date BETWEEN @from AND @to
+      WHERE (student_id = @userId OR student_id = @regNo) AND meal_date BETWEEN @from AND @to
     UNION
     SELECT meal_date, meal_id FROM attendance
-      WHERE student_id = @studentId AND meal_date BETWEEN @from AND @to
+      WHERE (student_id = @userId OR student_id = @regNo) AND meal_date BETWEEN @from AND @to
   )
   SELECT
     s.meal_date                     AS date,
@@ -358,17 +359,23 @@ const historyStmt = db.prepare(`
   FROM slots s
   JOIN meals m ON m.id = s.meal_id
   LEFT JOIN meal_intents i
-    ON i.student_id = @studentId AND i.meal_date = s.meal_date AND i.meal_id = s.meal_id
+    ON (i.student_id = @userId OR i.student_id = @regNo) AND i.meal_date = s.meal_date AND i.meal_id = s.meal_id
   LEFT JOIN attendance a
-    ON a.student_id = @studentId AND a.meal_date = s.meal_date AND a.meal_id = s.meal_id
+    ON (a.student_id = @userId OR a.student_id = @regNo) AND a.meal_date = s.meal_date AND a.meal_id = s.meal_id
   ORDER BY s.meal_date DESC, m.sort_order
 `);
 
-/** Past meals only — today is still in progress, so it is excluded. */
-function getHistory(studentId, days = 14) {
+/** Past and current meals within date window. */
+function getHistory(studentIdInput, days = 14) {
+  const cleanId = String(studentIdInput || '').trim();
+  const user = db.prepare('SELECT id, student_id FROM users WHERE lower(id) = lower(?) OR lower(student_id) = lower(?)').get(cleanId, cleanId);
+  const userId = user ? user.id : cleanId;
+  const regNo = user?.student_id || userId;
+
   const today = new Date();
   const rows = historyStmt.all({
-    studentId,
+    userId,
+    regNo,
     from: toDateKey(addDays(today, -days)),
     to: toDateKey(addDays(today, -1)),
   });
@@ -378,8 +385,10 @@ function getHistory(studentId, days = 14) {
 
 function summariseHistory(rows) {
   const planned = rows.filter((r) => r.intent === 'attending').length;
-  const skipped = rows.filter((r) => r.intent === 'not_attending').length;
+  const notAttending = rows.filter((r) => r.intent === 'not_attending').length;
   const attended = rows.filter((r) => r.attendanceStatus === 'verified').length;
+  const missed = rows.filter((r) => r.intent === 'attending' && r.attendanceStatus !== 'verified').length;
+  const skipped = notAttending + missed;
   const noResponse = rows.filter((r) => r.intent === 'none').length;
 
   return {
@@ -388,8 +397,91 @@ function summariseHistory(rows) {
     mealsSkipped: skipped,
     noResponse,
     // Share of meals the student planned that they actually turned up for.
-    attendanceRate: planned ? Math.round((attended / planned) * 100) : 0,
+    attendanceRate: planned ? Math.min(100, Math.round((attended / planned) * 100)) : (attended ? 100 : 0),
     totalRecords: rows.length,
+  };
+}
+
+/**
+ * Calculates personal attendance overview metrics for an authenticated student
+ * directly from SQLite attendance and meal_intents tables:
+ * - Planned: intents marked 'attending'
+ * - Attended: verified hardware scans
+ * - Skipped: marked 'not attending' OR missed
+ * - Attendance Rate: percentage
+ */
+function getStudentAttendanceOverview(studentIdInput, days = 14) {
+  const cleanId = String(studentIdInput || '').trim();
+  const user = db.prepare('SELECT id, student_id FROM users WHERE lower(id) = lower(?) OR lower(student_id) = lower(?)').get(cleanId, cleanId);
+  const userId = user ? user.id : cleanId;
+  const regNo = user?.student_id || userId;
+
+  const today = new Date();
+  const toDate = toDateKey(today);
+  const fromDate = toDateKey(addDays(today, -days));
+  const nowMin = minutesNow(today);
+
+  // 1. Planned: intents marked 'attending'
+  const plannedStmt = db.prepare(`
+    SELECT COUNT(*) as count FROM meal_intents
+    WHERE (student_id = ? OR student_id = ?)
+      AND intent = 'attending'
+      AND meal_date BETWEEN ? AND ?
+  `);
+  const mealsPlanned = plannedStmt.get(userId, regNo, fromDate, toDate)?.count || 0;
+
+  // 2. Attended: verified hardware scans
+  const attendedStmt = db.prepare(`
+    SELECT COUNT(*) as count FROM attendance
+    WHERE (student_id = ? OR student_id = ?)
+      AND status = 'verified'
+      AND meal_date BETWEEN ? AND ?
+  `);
+  const mealsAttended = attendedStmt.get(userId, regNo, fromDate, toDate)?.count || 0;
+
+  // 3. Skipped: marked 'not attending' OR missed (planned 'attending' without attendance scan for past/concluded meals)
+  const notAttendingStmt = db.prepare(`
+    SELECT COUNT(*) as count FROM meal_intents
+    WHERE (student_id = ? OR student_id = ?)
+      AND intent = 'not_attending'
+      AND meal_date BETWEEN ? AND ?
+  `);
+  const notAttendingCount = notAttendingStmt.get(userId, regNo, fromDate, toDate)?.count || 0;
+
+  const missedStmt = db.prepare(`
+    SELECT COUNT(*) as count FROM meal_intents i
+    JOIN meals m ON m.id = i.meal_id
+    WHERE (i.student_id = ? OR i.student_id = ?)
+      AND i.intent = 'attending'
+      AND i.meal_date BETWEEN ? AND ?
+      AND (i.meal_date < ? OR (i.meal_date = ? AND m.end_min <= ?))
+      AND NOT EXISTS (
+        SELECT 1 FROM attendance a
+        WHERE (a.student_id = ? OR a.student_id = ?)
+          AND a.meal_date = i.meal_date
+          AND a.meal_id = i.meal_id
+          AND a.status = 'verified'
+      )
+  `);
+  const missedCount = missedStmt.get(userId, regNo, fromDate, toDate, toDate, toDate, nowMin, userId, regNo)?.count || 0;
+  const mealsSkipped = notAttendingCount + missedCount;
+
+  // 4. Attendance Rate
+  const attendanceRate = mealsPlanned > 0
+    ? Math.min(100, Math.round((mealsAttended / mealsPlanned) * 100))
+    : (mealsAttended > 0 ? 100 : 0);
+
+  return {
+    mealsPlanned,
+    mealsAttended,
+    mealsSkipped,
+    attendanceRate,
+    summary: {
+      mealsPlanned,
+      mealsAttended,
+      mealsSkipped,
+      attendanceRate,
+    },
   };
 }
 
@@ -648,6 +740,7 @@ module.exports = {
   getHistory,
   summariseHistory,
   historyTrend,
+  getStudentAttendanceOverview,
   getNotifications,
   markNotification,
   getPreferences,
@@ -863,20 +956,21 @@ function recordHardwareScan({ studentId, fingerprintId, deviceId }) {
   const regNo = userRow.student_id || userRow.id;
   const name = userRow.name || regNo;
 
-  // 2. Active Meal Resolution with Fallback
+  // 2. Active Meal Resolution with Fallback (immediate rollover)
   const nowMin = minutesNow();
   const listMealsStmt = db.prepare('SELECT * FROM meals ORDER BY sort_order');
   const allMeals = listMealsStmt.all(); // breakfast, lunch, dinner
   let activeMeal = allMeals.find((m) => nowMin >= m.start_min && nowMin <= m.end_min);
 
   if (!activeMeal) {
-    activeMeal = allMeals.find((m) => nowMin < m.start_min);
-  }
-  if (!activeMeal) {
-    activeMeal = allMeals[allMeals.length - 1] || allMeals[0];
+    activeMeal = allMeals.find((m) => nowMin <= m.end_min);
+    if (!activeMeal) {
+      activeMeal = allMeals[0]; // After dinner ends, rollover to tomorrow's breakfast
+    }
   }
   const mealId = activeMeal.id;
-  const dateKey = toDateKey(new Date());
+  const isTomorrowMeal = nowMin > allMeals[allMeals.length - 1].end_min;
+  const dateKey = isTomorrowMeal ? toDateKey(addDays(new Date(), 1)) : toDateKey(new Date());
 
   // 3. Duplicate Check
   const checkAttendanceStmt = db.prepare(`
@@ -999,21 +1093,31 @@ function getRecentActivity(limit = 6) {
   ];
 }
 
-function getLiveStats() {
-  const todayKey = toDateKey(new Date());
-  const nowMin = minutesNow();
-  const meals = adminMealSnapshot();
+function getLiveStats(customMinutes, customDate) {
+  const todayKey = customDate || toDateKey(new Date());
+  const nowMin = customMinutes !== undefined && customMinutes !== null ? Number(customMinutes) : minutesNow();
+  const meals = adminMealSnapshot(todayKey, nowMin);
+  const sorted = [...meals].sort((a, b) => a.startMin - b.startMin);
 
-  let currentMeal = meals.find((m) => nowMin >= m.startMin && nowMin <= m.endMin);
-  if (!currentMeal) {
-    currentMeal = meals.find((m) => nowMin < m.startMin);
-  }
-  if (!currentMeal) {
-    currentMeal = meals[meals.length - 1] || meals[0];
-  }
+  let currentMeal = null;
+  let nextMeal = null;
+  let isTomorrow = false;
+  let effectiveDateKey = todayKey;
 
-  const currentIndex = meals.findIndex((m) => m.id === currentMeal.id);
-  const nextMeal = meals[(currentIndex + 1) % meals.length] || meals[0];
+  const activeCandidate = sorted.find((m) => nowMin <= m.endMin);
+  if (activeCandidate) {
+    currentMeal = activeCandidate;
+    const currentIndex = sorted.findIndex((m) => m.id === currentMeal.id);
+    nextMeal = sorted[(currentIndex + 1) % sorted.length] || sorted[0];
+  } else {
+    isTomorrow = true;
+    effectiveDateKey = toDateKey(addDays(new Date(todayKey), 1));
+    const tomorrowMeals = adminMealSnapshot(effectiveDateKey, 0);
+    const sortedTomorrow = [...tomorrowMeals].sort((a, b) => a.startMin - b.startMin);
+    currentMeal = sortedTomorrow[0] || sorted[0];
+    currentMeal.status = 'Upcoming';
+    nextMeal = sortedTomorrow[1] || sortedTomorrow[0];
+  }
 
   const fullDayPredicted = meals.reduce((sum, m) => sum + m.predicted, 0);
   const fullDayConfirmed = meals.reduce((sum, m) => sum + m.confirmed, 0);

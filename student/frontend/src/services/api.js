@@ -159,6 +159,7 @@ export const studentApi = {
   meals: () => request('/student/meals'),
   setIntent: (mealId, intent, date) =>
     request(`/student/meals/${mealId}/intent`, { method: 'POST', body: { intent, date } }),
+  attendanceOverview: (days = 14) => request(`/student/attendance-overview?days=${days}`),
   history: (days = 14) => request(`/student/history?days=${days}`),
   notifications: () => request('/student/notifications'),
   markNotification: (id, read = true) =>

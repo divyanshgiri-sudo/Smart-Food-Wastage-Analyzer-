@@ -381,20 +381,47 @@ router.post('/student/meals/:mealId/intent', ...studentOnly, (req, res) => {
   const updatedMeal = meals.find((meal) => meal.id === mealId);
 
   const io = req.app.get('io');
+  const eventPayload = {
+    studentId: req.user.studentId || req.user.id,
+    userId: req.user.id,
+    mealId,
+    intent,
+    date: dateKey,
+  };
   if (io) {
-    io.emit('intent:update', {
-      studentId: req.user.studentId || req.user.id,
-      userId: req.user.id,
-      mealId,
-      intent,
-      date: dateKey,
-    });
+    io.emit('intent:update', eventPayload);
     if (typeof data.getLiveStats === 'function') {
       io.emit('dashboard:stats_changed', data.getLiveStats());
     }
   }
 
+  // Inter-service sync: notify Mess backend so Mess frontend dashboard reflects confirmed intents live
+  const messBackendUrl = (process.env.MESS_BACKEND_URL || 'http://localhost:5002').replace(/\/+$/, '');
+  fetch(`${messBackendUrl}/api/internal/intent-update`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(eventPayload),
+  }).catch(() => {
+    // Non-blocking
+  });
+
   return res.json({ ok: true, meal: updatedMeal });
+});
+
+/**
+ * GET /api/student/attendance-overview?days=14
+ * Calculates specific attendance overview metrics for the authenticated student
+ * using SQLite attendance and meal_intents tables:
+ * Planned (intents marked 'attending'), Attended (verified hardware scans),
+ * Skipped (marked 'not attending' or missed), and Attendance Rate.
+ */
+router.get('/student/attendance-overview', ...studentOnly, (req, res) => {
+  const days = Math.min(Math.max(parseInt(req.query.days, 10) || 14, 1), 90);
+  const overview = data.getStudentAttendanceOverview(req.user.id, days);
+  res.json({
+    days,
+    ...overview,
+  });
 });
 
 /**
@@ -404,6 +431,7 @@ router.post('/student/meals/:mealId/intent', ...studentOnly, (req, res) => {
 router.get('/student/history', ...studentOnly, (req, res) => {
   const days = Math.min(Math.max(parseInt(req.query.days, 10) || 14, 1), 30);
   const records = data.getHistory(req.user.id, days);
+  const overview = data.getStudentAttendanceOverview(req.user.id, days);
 
   res.json({
     days,

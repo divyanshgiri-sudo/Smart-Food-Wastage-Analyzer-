@@ -309,7 +309,7 @@ router.get('/dashboard/summary', async (req, res) => {
     const localMinutes = req.query.localMinutes !== undefined ? parseInt(req.query.localMinutes, 10) : undefined;
     const clientDate = req.query.date || undefined;
     const liveStats = store.getLiveStats(localMinutes, clientDate);
-    const todayStr = liveStats.date || toDateString(new Date());
+    const todayStr = liveStats.effectiveDate || liveStats.date || toDateString(new Date());
 
     // Resolve current and next meal IDs
     const currentMealId = liveStats.currentMeal?.id || 'lunch';
@@ -719,6 +719,22 @@ router.post('/hardware/enroll', (req, res) => {
     message: `Fingerprint ID ${parsedFpId} successfully assigned to ${result.user.name} (${result.user.studentId || result.user.id}).`,
     user: result.user,
   });
+});
+
+/**
+ * POST /api/internal/intent-update
+ * Inter-service synchronization: Receives intent updates from student backend
+ * and broadcasts Socket.IO events to connected Mess frontend clients.
+ */
+router.post('/internal/intent-update', (req, res) => {
+  const intentData = req.body || {};
+  const io = req.app.get('io');
+  if (io) {
+    io.emit('intent:update', intentData);
+    const liveStats = store.getLiveStats();
+    io.emit('dashboard:stats_changed', liveStats);
+  }
+  return res.json({ ok: true });
 });
 
 module.exports = router;

@@ -15,7 +15,7 @@
  */
 
 const { db, dbPath } = require('./db');
-const { seedReferenceData } = require('./db/seed');
+const { seedReferenceData, seedDemoHistory } = require('./db/seed');
 
 const MINUTE = 60 * 1000;
 const TIMEZONE = process.env.TIMEZONE || 'Asia/Kolkata';
@@ -76,6 +76,7 @@ function atMinutes(dateKey, mins) {
 
 try {
   seedReferenceData();
+  seedDemoHistory({ toDateKey, addDays, atMinutes, minutesNow }, 21);
 } catch (err) {
   if (err.message.includes('locked') || err.message.includes('busy')) {
     console.log('[store] Database locked by another process during startup seed; skipping redundant seed.');
@@ -895,21 +896,16 @@ function recordHardwareScan({ studentId, fingerprintId, deviceId }) {
   let activeMeal = allMeals.find((m) => nowMin >= m.start_min && nowMin <= m.end_min);
 
   if (!activeMeal) {
-    const lunch = allMeals.find((m) => m.id === 'lunch');
-    const dinner = allMeals.find((m) => m.id === 'dinner');
-    const lunchStart = lunch ? lunch.start_min : 750;
-    const dinnerStart = dinner ? dinner.start_min : 1155;
-
-    if (nowMin < lunchStart) {
-      activeMeal = allMeals.find((m) => m.id === 'breakfast') || allMeals[0];
-    } else if (nowMin < dinnerStart) {
-      activeMeal = lunch || allMeals[1] || allMeals[0];
-    } else {
-      activeMeal = dinner || allMeals[allMeals.length - 1];
+    // Rollover: exact moment a meal's end time passes, roll over to the next upcoming meal
+    activeMeal = allMeals.find((m) => nowMin <= m.end_min);
+    if (!activeMeal) {
+      // After dinner ends, instantly roll over to tomorrow's breakfast
+      activeMeal = allMeals[0];
     }
   }
   const mealId = activeMeal.id;
-  const dateKey = toDateKey(new Date());
+  const isTomorrowMeal = nowMin > allMeals[allMeals.length - 1].end_min;
+  const dateKey = isTomorrowMeal ? toDateKey(addDays(new Date(), 1)) : toDateKey(new Date());
 
   // 3. Duplicate Check
   const checkAttendanceStmt = db.prepare(`
@@ -1037,39 +1033,32 @@ function getLiveStats(customMinutes, customDate) {
   const nowMin = customMinutes !== undefined && customMinutes !== null ? Number(customMinutes) : minutesNow();
   const meals = adminMealSnapshot(todayKey, nowMin);
 
-  // Dynamic active meal resolution based on local clock windows:
-  // Sort meals by startMin
+  // Dynamic active meal resolution based on immediate rollover:
+  // The exact moment a meal's end time passes, the Active Meal instantly rolls over
+  // to the next upcoming meal. After Dinner ends, it immediately rolls over to tomorrow's Breakfast.
   const sorted = [...meals].sort((a, b) => a.startMin - b.startMin);
 
   let currentMeal = null;
-  // 1. Is any meal currently in its serving window?
-  const activeServing = sorted.find((m) => nowMin >= m.startMin && nowMin <= m.endMin);
-  if (activeServing) {
-    currentMeal = activeServing;
+  let nextMeal = null;
+  let isTomorrow = false;
+  let effectiveDateKey = todayKey;
+
+  const activeCandidate = sorted.find((m) => nowMin <= m.endMin);
+
+  if (activeCandidate) {
+    currentMeal = activeCandidate;
+    const currentIndex = sorted.findIndex((m) => m.id === currentMeal.id);
+    nextMeal = sorted[(currentIndex + 1) % sorted.length] || sorted[0];
   } else {
-    // 2. Meal transition windows:
-    // Before lunch starts (e.g. before 12:30 PM):
-    // Active meal is Breakfast (Upcoming before 7:00 AM, Completed after 9:00 AM)
-    const lunch = sorted.find((m) => m.id === 'lunch');
-    const lunchStart = lunch ? lunch.startMin : 750;
-    const dinner = sorted.find((m) => m.id === 'dinner');
-    const dinnerStart = dinner ? dinner.startMin : 1155;
-
-    if (nowMin < lunchStart) {
-      currentMeal = sorted.find((m) => m.id === 'breakfast') || sorted[0];
-    } else if (nowMin < dinnerStart) {
-      // Between lunch start (12:30 PM) and dinner start (19:15 PM):
-      // Active meal is Lunch (Serving until 14:15, Completed 14:15-19:15)
-      currentMeal = lunch || sorted[1] || sorted[0];
-    } else {
-      // At or after dinner start (19:15 PM onwards):
-      // Active meal is Dinner
-      currentMeal = dinner || sorted[sorted.length - 1];
-    }
+    // All meals today have concluded. Rollover immediately to tomorrow's Breakfast!
+    isTomorrow = true;
+    effectiveDateKey = toDateKey(addDays(todayKey, 1));
+    const tomorrowMeals = adminMealSnapshot(effectiveDateKey, 0);
+    const sortedTomorrow = [...tomorrowMeals].sort((a, b) => a.startMin - b.startMin);
+    currentMeal = sortedTomorrow[0] || sorted[0];
+    currentMeal.status = 'Upcoming';
+    nextMeal = sortedTomorrow[1] || sortedTomorrow[0];
   }
-
-  const currentIndex = sorted.findIndex((m) => m.id === currentMeal.id);
-  const nextMeal = sorted[(currentIndex + 1) % sorted.length] || sorted[0];
 
   const fullDayPredicted = meals.reduce((sum, m) => sum + m.predicted, 0);
   const fullDayConfirmed = meals.reduce((sum, m) => sum + m.confirmed, 0);
@@ -1089,9 +1078,10 @@ function getLiveStats(customMinutes, customDate) {
     currentMeal: {
       id: currentMeal.id,
       name: currentMeal.name,
-      label: `${currentMeal.name} (${currentMeal.time})`,
+      label: `${currentMeal.name} (${currentMeal.time})${isTomorrow ? ' (Tomorrow)' : ''}`,
       time: currentMeal.time,
       status: currentMeal.status,
+      isTomorrow,
       predicted: currentMealPredicted,
       confirmed: currentMeal.confirmed,
       actual: currentMeal.actual,
@@ -1102,6 +1092,7 @@ function getLiveStats(customMinutes, customDate) {
       name: nextMeal.name,
       label: `${nextMeal.name} (${nextMeal.time})`,
       time: nextMeal.time,
+      isTomorrow,
       predicted: nextMealPredicted,
       confirmed: nextMeal.confirmed,
       recommended: Math.round((nextMeal.confirmed || nextMealPredicted) * 0.98),
@@ -1121,6 +1112,8 @@ function getLiveStats(customMinutes, customDate) {
     recentActivity: getRecentActivity(6),
     meals,
     date: todayKey,
+    effectiveDate: effectiveDateKey,
+    isTomorrow,
   };
 }
 
