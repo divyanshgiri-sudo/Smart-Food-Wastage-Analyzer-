@@ -17,6 +17,7 @@ const { db, dbPath } = require('./db');
 const store = require('./store');
 const apiRoutes = require('./routes/api');
 const { initMealSyncCron } = require('./cron/mealSyncCron');
+const pubsub = require('./db/pubsub');
 
 const app = express();
 const PORT = process.env.PORT || 5002;
@@ -81,6 +82,18 @@ const io = new Server(server, {
 });
 
 app.set('io', io);
+
+// Cross-service synchronization: listen for intent_updates from student backend and hardware_scans
+pubsub.initListener(['intent_updates', 'hardware_scans'], (channel, payload) => {
+  console.log(`[Mess backend] Received PostgreSQL pubsub event on [${channel}]:`, payload?.studentId || payload);
+  if (channel === 'intent_updates') {
+    io.emit('intent:update', payload);
+  } else if (channel === 'hardware_scans') {
+    io.emit('attendance:update', payload);
+  }
+  const liveStats = store.getLiveStats();
+  io.emit('dashboard:stats_changed', liveStats);
+});
 
 io.on('connection', (socket) => {
   console.log(`[mess socket] Client connected: ${socket.id}`);

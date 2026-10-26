@@ -4,6 +4,7 @@ const router = express.Router();
 const mockData = require('../mockData');
 const store = require('../store');
 const { db } = require('../db');
+const pubsub = require('../db/pubsub');
 const {
   buildMlPayload,
   generateMealPrediction,
@@ -673,6 +674,9 @@ router.post('/hardware/scan', (req, res) => {
     io.emit('attendance:update', scanResult);
     io.emit('dashboard:stats_changed', liveStats);
   }
+
+  // Cross-service synchronization: notify Student Backend via PostgreSQL NOTIFY
+  pubsub.notify('hardware_scans', scanResult);
 
   let statusCode = 200;
   if (scanResult.status === 'unregistered') statusCode = 404;

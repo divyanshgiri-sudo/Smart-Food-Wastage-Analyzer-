@@ -34,6 +34,16 @@ const BASE_URL = normalizeBaseUrl(import.meta.env.VITE_API_URL);
 const TOKEN_KEY = 'sfwa.token';
 const USER_KEY = 'sfwa.user';
 
+export function getSocketUrl() {
+  const configured = import.meta.env.VITE_SOCKET_URL;
+  if (configured && typeof configured === 'string') return configured.trim().replace(/\/+$/, '');
+  if (BASE_URL) return BASE_URL;
+  if (typeof window !== 'undefined' && window.location.protocol === 'https:') {
+    return window.location.origin;
+  }
+  return 'http://localhost:5000';
+}
+
 /**
  * Fired when the server rejects the stored token, so the app can end the
  * session in one place instead of every page handling 401 on its own.

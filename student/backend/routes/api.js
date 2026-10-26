@@ -24,6 +24,7 @@ const {
   getPendingRegistration,
   clearPendingRegistration,
 } = require('../otpService');
+const pubsub = require('../db/pubsub');
 
 const router = express.Router();
 
@@ -394,6 +395,9 @@ router.post('/student/meals/:mealId/intent', ...studentOnly, (req, res) => {
       io.emit('dashboard:stats_changed', data.getLiveStats());
     }
   }
+
+  // Cross-service synchronization: notify via PostgreSQL NOTIFY
+  pubsub.notify('intent_updates', eventPayload);
 
   // Inter-service sync: notify Mess backend so Mess frontend dashboard reflects confirmed intents live
   const messBackendUrl = (process.env.MESS_BACKEND_URL || 'http://localhost:5002').replace(/\/+$/, '');

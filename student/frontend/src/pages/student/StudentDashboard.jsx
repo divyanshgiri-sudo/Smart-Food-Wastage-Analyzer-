@@ -6,7 +6,9 @@
  * meal — is never more than one screen away.
  */
 
+import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { io } from 'socket.io-client';
 import MealCard from '../../components/student/MealCard';
 import StatCard from '../../components/common/StatCard';
 import { AttendanceBadge, IntentBadge } from '../../components/student/StatusBadges';
@@ -14,13 +16,63 @@ import { CardSkeleton, EmptyState, ErrorState } from '../../components/common/St
 import { useAuth } from '../../context/AuthContext';
 import { useMeals, summariseDay } from '../../hooks/useMeals';
 import { useApi } from '../../hooks/useApi';
-import { studentApi } from '../../services/api';
+import { studentApi, getSocketUrl } from '../../services/api';
 import { formatLongDate, greeting, sortMeals } from '../../utils/format';
 
 export default function StudentDashboard() {
   const { user } = useAuth();
   const { data, loading, error, reload, saveIntent, savingKey } = useMeals();
   const overview = useApi(() => studentApi.attendanceOverview(14), []);
+
+  // Real-time synchronization for personal attendance overview and live meal updates
+  useEffect(() => {
+    if (!user) return;
+
+    const socketUrl = getSocketUrl();
+    const isHttps = typeof window !== 'undefined' && (window.location.protocol === 'https:' || socketUrl.startsWith('https:'));
+    const socket = io(socketUrl, {
+      transports: ['websocket', 'polling'],
+      secure: isHttps,
+      rejectUnauthorized: false,
+    });
+
+    const handleAttendanceUpdate = (scanResult) => {
+      if (!scanResult || scanResult.status !== 'success') return;
+      const targetStudentId = (user.studentId || user.id || '').trim().toUpperCase();
+      const scannedStudentId = (scanResult.studentId || scanResult.userId || '').trim().toUpperCase();
+      const userIdUpper = (user.id || '').trim().toUpperCase();
+
+      if (
+        targetStudentId &&
+        (scannedStudentId === targetStudentId || scannedStudentId === userIdUpper)
+      ) {
+        overview.reload({ quiet: true });
+        reload({ quiet: true });
+      }
+    };
+
+    socket.on('attendance:update', handleAttendanceUpdate);
+
+    const handleLocalSync = () => {
+      overview.reload({ quiet: true });
+    };
+
+    window.addEventListener('student:intent_updated', handleLocalSync);
+    window.addEventListener('student:attendance_updated', handleLocalSync);
+
+    return () => {
+      socket.disconnect();
+      window.removeEventListener('student:intent_updated', handleLocalSync);
+      window.removeEventListener('student:attendance_updated', handleLocalSync);
+    };
+  }, [user, overview, reload]);
+
+  const handleSelectIntent = async (meal, intent) => {
+    const success = await saveIntent(meal, intent);
+    if (success) {
+      overview.reload({ quiet: true });
+    }
+  };
 
   const todayMeals = sortMeals(data?.today?.meals);
   const tomorrowMeals = sortMeals(data?.tomorrow?.meals);
@@ -156,7 +208,7 @@ export default function StudentDashboard() {
                 key={meal?.id || `${meal?.date}-${meal?.name}`}
                 meal={meal}
                 saving={savingKey === `${meal?.date}-${meal?.id}`}
-                onSelect={(intent) => saveIntent(meal, intent)}
+                onSelect={(intent) => handleSelectIntent(meal, intent)}
               />
             ))}
           </div>
@@ -185,7 +237,7 @@ export default function StudentDashboard() {
                 key={meal?.id || `${meal?.date}-${meal?.name}`}
                 meal={meal}
                 saving={savingKey === `${meal?.date}-${meal?.id}`}
-                onSelect={(intent) => saveIntent(meal, intent)}
+                onSelect={(intent) => handleSelectIntent(meal, intent)}
               />
             ))}
           </div>

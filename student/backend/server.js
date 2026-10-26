@@ -24,6 +24,7 @@ const { Server } = require('socket.io');
 const apiRoutes = require('./routes/api');
 const { db, dbPath } = require('./db');
 const store = require('./store');
+const pubsub = require('./db/pubsub');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -85,6 +86,17 @@ const io = new Server(server, {
 });
 
 app.set('io', io);
+
+// Cross-service synchronization: listen for hardware_scans broadcasted by Mess Backend
+pubsub.initListener(['hardware_scans'], (channel, payload) => {
+  console.log(`[Student backend] Received PostgreSQL pubsub event on [${channel}]:`, payload?.studentId || payload);
+  if (channel === 'hardware_scans') {
+    io.emit('attendance:update', payload);
+    if (typeof store.getLiveStats === 'function') {
+      io.emit('dashboard:stats_changed', store.getLiveStats());
+    }
+  }
+});
 
 io.on('connection', (socket) => {
   console.log(`[socket] Client connected: ${socket.id}`);
@@ -194,6 +206,9 @@ app.post('/api/hardware/scan', (req, res) => {
   // Instant real-time broadcast to all connected web clients & dashboards
   io.emit('attendance:update', scanResult);
   io.emit('dashboard:stats_changed', liveStats);
+
+  // Cross-service synchronization: notify Mess backend via PostgreSQL NOTIFY
+  pubsub.notify('hardware_scans', scanResult);
 
   let statusCode = 200;
   if (scanResult.status === 'unregistered') statusCode = 404;

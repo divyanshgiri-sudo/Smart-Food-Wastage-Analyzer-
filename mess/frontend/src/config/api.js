@@ -17,11 +17,15 @@ export const API_BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/+$/,
 export const SOCKET_URL = (
   import.meta.env.VITE_SOCKET_URL ||
   API_BASE_URL ||
-  'http://localhost:5002'
+  (typeof window !== 'undefined' && window.location.protocol === 'https:'
+    ? window.location.origin
+    : 'http://localhost:5002')
 ).replace(/\/+$/, '');
 
 export const HARDWARE_API_URL = (
   import.meta.env.VITE_HARDWARE_API_URL ||
   API_BASE_URL ||
-  'http://localhost:5002'
+  (typeof window !== 'undefined' && window.location.protocol === 'https:'
+    ? window.location.origin
+    : 'http://localhost:5002')
 ).replace(/\/+$/, '');

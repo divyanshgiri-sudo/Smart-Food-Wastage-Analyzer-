@@ -8,12 +8,10 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { io } from 'socket.io-client';
-import { studentApi } from '../services/api';
+import { studentApi, getSocketUrl } from '../services/api';
 import { useToast } from '../context/ToastContext';
 import { useAuth } from '../context/AuthContext';
 import { useApi } from './useApi';
-
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000';
 
 export function useMeals() {
   const { data, loading, error, reload, setData } = useApi(() => studentApi.meals(), []);
@@ -24,7 +22,13 @@ export function useMeals() {
   useEffect(() => {
     if (!user) return;
 
-    const socket = io(SOCKET_URL, { transports: ['websocket', 'polling'] });
+    const socketUrl = getSocketUrl();
+    const isHttps = typeof window !== 'undefined' && (window.location.protocol === 'https:' || socketUrl.startsWith('https:'));
+    const socket = io(socketUrl, {
+      transports: ['websocket', 'polling'],
+      secure: isHttps,
+      rejectUnauthorized: false,
+    });
 
     socket.on('attendance:update', (scanResult) => {
       if (!scanResult || scanResult.status !== 'success') return;
@@ -62,6 +66,14 @@ export function useMeals() {
           };
         });
 
+        // Background refetch to guarantee absolute consistency with server database
+        reload({ quiet: true });
+
+        // Signal other components (Dashboard overview, history) to refresh their stats
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('student:attendance_updated', { detail: scanResult }));
+        }
+
         notify({
           variant: 'success',
           title: 'Entrance Attendance Verified! 🎟️',
@@ -73,7 +85,7 @@ export function useMeals() {
     return () => {
       socket.disconnect();
     };
-  }, [user, setData, notify]);
+  }, [user, setData, notify, reload]);
 
   /**
    * Sends the intention and replaces that meal with the server's version, so
@@ -96,6 +108,18 @@ export function useMeals() {
           });
           return { ...current, today: replaceIn(current.today), tomorrow: replaceIn(current.tomorrow) };
         });
+
+        // Background refetch to ensure client is in full lockstep with database truth
+        reload({ quiet: true });
+
+        // Signal other components (Dashboard attendance overview cards) to refetch immediately
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(
+            new CustomEvent('student:intent_updated', {
+              detail: { meal, intent, updated },
+            })
+          );
+        }
 
         notify({
           variant: 'success',

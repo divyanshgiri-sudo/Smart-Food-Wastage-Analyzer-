@@ -35,7 +35,20 @@ export default function Dashboard() {
       .then(res => res.json())
       .then(json => {
         setDashboardData(json);
-        setRecentActivity(prev => (prev.length === 0 && json.recentActivity ? json.recentActivity : prev));
+        setRecentActivity(prev => {
+          if (!json.recentActivity || json.recentActivity.length === 0) return prev;
+          if (prev.length === 0) return json.recentActivity;
+          const seen = new Set();
+          const merged = [];
+          for (const item of [...prev, ...json.recentActivity]) {
+            const key = item.id || `${item.title || item.description}-${item.timestamp || item.time}`;
+            if (!seen.has(key)) {
+              seen.add(key);
+              merged.push(item);
+            }
+          }
+          return merged.slice(0, 6);
+        });
         if (json.notifications && json.notifications.length > 0) {
           setNotifications(prev => (prev.length === 0 ? json.notifications : prev));
         }
@@ -61,21 +74,36 @@ export default function Dashboard() {
     fetchSummary();
     fetchHardwareStatus();
 
-    // Socket.io real-time connection to Mess backend
-    const socket = io(SOCKET_URL, { transports: ['websocket', 'polling'] });
+    // Socket.io real-time connection to Mess backend (handling production HTTPS / WSS)
+    const isHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
+    let targetSocketUrl = SOCKET_URL;
+    if (isHttps && targetSocketUrl.startsWith('http:')) {
+      targetSocketUrl = targetSocketUrl.replace(/^http:/, 'https:');
+    }
+
+    const socket = io(targetSocketUrl, {
+      transports: ['websocket', 'polling'],
+      secure: isHttps || targetSocketUrl.startsWith('https:'),
+      rejectUnauthorized: false,
+    });
 
     socket.on('connect', () => {
-      console.log('[mess dashboard] Connected to real-time socket server');
+      console.log('[mess dashboard] Connected to real-time socket server:', targetSocketUrl);
     });
 
     // Optional direct socket connection to student backend (port 5000 in dev) for multi-port environments
-    const studentSocketUrl = (import.meta.env.VITE_STUDENT_SOCKET_URL || 'http://localhost:5000').replace(/\/+$/, '');
+    const defaultStudentUrl = isHttps ? '' : 'http://localhost:5000';
+    const rawStudentSocketUrl = (import.meta.env.VITE_STUDENT_SOCKET_URL || defaultStudentUrl).replace(/\/+$/, '');
     let studentSocket = null;
-    if (studentSocketUrl && studentSocketUrl !== SOCKET_URL) {
+    if (rawStudentSocketUrl && rawStudentSocketUrl !== targetSocketUrl && (!isHttps || rawStudentSocketUrl.startsWith('https:'))) {
       try {
-        studentSocket = io(studentSocketUrl, { transports: ['websocket', 'polling'] });
+        studentSocket = io(rawStudentSocketUrl, {
+          transports: ['websocket', 'polling'],
+          secure: isHttps || rawStudentSocketUrl.startsWith('https:'),
+          rejectUnauthorized: false,
+        });
         studentSocket.on('connect', () => {
-          console.log('[mess dashboard] Connected to student real-time socket server:', studentSocketUrl);
+          console.log('[mess dashboard] Connected to student real-time socket server:', rawStudentSocketUrl);
         });
       } catch (err) {
         console.warn('[mess dashboard] Could not connect to student socket:', err);
@@ -117,6 +145,32 @@ export default function Dashboard() {
           variant: isWalkIn ? 'walkin' : 'booked',
           dotColor: isWalkIn ? '#3b82f6' : 'var(--success-color)',
         };
+
+        // Optimistically update actual served count on the active meal card
+        setDashboardData(prev => {
+          if (!prev) return prev;
+          const targetMealId = scanResult.meal;
+          const updatedMeals = (prev.meals || []).map(m => {
+            if (m.id === targetMealId) {
+              return { ...m, actual: (m.actual || 0) + 1 };
+            }
+            return m;
+          });
+          let updatedCurrent = prev.currentMeal;
+          if (updatedCurrent && updatedCurrent.id === targetMealId) {
+            updatedCurrent = { ...updatedCurrent, actual: (updatedCurrent.actual || 0) + 1 };
+          }
+          let updatedSummary = prev.summary;
+          if (updatedSummary) {
+            updatedSummary = { ...updatedSummary, actualSoFar: (updatedSummary.actualSoFar || 0) + 1 };
+          }
+          return {
+            ...prev,
+            meals: updatedMeals,
+            currentMeal: updatedCurrent,
+            summary: updatedSummary,
+          };
+        });
       }
 
       if (newActivity) {
@@ -218,16 +272,26 @@ export default function Dashboard() {
       }
     };
 
+    const handleStatsChanged = (stats) => {
+      if (stats && stats.meals && stats.meals.length > 0) {
+        setDashboardData(prev => ({
+          ...prev,
+          ...stats,
+        }));
+      }
+      fetchSummary();
+    };
+
     socket.on('attendance:update', handleAttendanceUpdate);
     socket.on('intent:update', handleIntentUpdate);
-    socket.on('dashboard:stats_changed', () => fetchSummary());
+    socket.on('dashboard:stats_changed', handleStatsChanged);
     socket.on('meal:concluded', () => fetchSummary());
     socket.on('hardware:mode_changed', handleHardwareModeChange);
     socket.on('hardware:fingerprint_captured', handleFingerprintCaptured);
 
     if (studentSocket) {
       studentSocket.on('intent:update', handleIntentUpdate);
-      studentSocket.on('dashboard:stats_changed', () => fetchSummary());
+      studentSocket.on('dashboard:stats_changed', handleStatsChanged);
       studentSocket.on('attendance:update', handleAttendanceUpdate);
     }
 
