@@ -4,7 +4,7 @@ import { LayoutDashboard, Utensils, LineChart, Users, Clock, User } from 'lucide
 export default function Sidebar() {
   const menuItems = [
     { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
-    { name: "Today's Meals", path: '/todays-meals', icon: Utensils },
+    /* { name: "Today's Meals", path: '/todays-meals', icon: Utensils }, */
     { name: 'Predictions', path: '/predictions', icon: LineChart },
     // { name: 'Attendance', path: '/attendance', icon: Users }, // Hidden from frontend navigation
     { name: 'History', path: '/history', icon: Clock },

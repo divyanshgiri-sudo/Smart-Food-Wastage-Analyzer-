@@ -36,7 +36,8 @@ function App() {
         {/* Protected Dashboard Routes */}
         <Route element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>}>
           <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/todays-meals" element={<TodaysMeals />} />
+          {/* <Route path="/todays-meals" element={<TodaysMeals />} /> */}
+          <Route path="/todays-meals" element={<Navigate to="/dashboard" replace />} />
           <Route path="/predictions" element={<Predictions />} />
           <Route path="/attendance" element={<Attendance />} />
           <Route path="/history" element={<History />} />
